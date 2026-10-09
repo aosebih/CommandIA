@@ -1,4 +1,4 @@
-"""
+﻿"""
 List of all 58 official Algerian Wilayas.
 Used for validation as per PRD requirements.
 """
@@ -8,27 +8,27 @@ ALGERIAN_WILAYAS = [
     "Laghouat",
     "Oum El Bouaghi",
     "Batna",
-    "Béjaïa",
+    "BÃ©jaÃ¯a",
     "Biskra",
-    "Béchar",
+    "BÃ©char",
     "Blida",
     "Bouira",
     "Tamanrasset",
-    "Tébessa",
+    "TÃ©bessa",
     "Tlemcen",
     "Tiaret",
     "Tizi Ouzou",
     "Alger",
     "Djelfa",
     "Jijel",
-    "Sétif",
-    "Saïda",
+    "SÃ©tif",
+    "SaÃ¯da",
     "Skikda",
-    "Sidi Bel Abbès",
+    "Sidi Bel AbbÃ¨s",
     "Annaba",
     "Guelma",
     "Constantine",
-    "Médéa",
+    "MÃ©dÃ©a",
     "Mostaganem",
     "M'Sila",
     "Mascara",
@@ -37,7 +37,7 @@ ALGERIAN_WILAYAS = [
     "El Bayadh",
     "Illizi",
     "Bordj Bou Arreridj",
-    "Boumerdès",
+    "BoumerdÃ¨s",
     "El Tarf",
     "Tindouf",
     "Tissemsilt",
@@ -46,15 +46,15 @@ ALGERIAN_WILAYAS = [
     "Souk Ahras",
     "Tipaza",
     "Mila",
-    "Aïn Defla",
-    "Naâma",
-    "Aïn Témouchent",
-    "Ghardaïa",
+    "AÃ¯n Defla",
+    "NaÃ¢ma",
+    "AÃ¯n TÃ©mouchent",
+    "GhardaÃ¯a",
     "Relizane",
     "Timimoun",
     "Bordj Badji Mokhtar",
     "Ouled Djellal",
-    "Béni Abbès",
+    "BÃ©ni AbbÃ¨s",
     "In Salah",
     "In Guezzam",
     "Touggourt",
@@ -72,14 +72,14 @@ ALGERIAN_WILAYAS_NORMALIZED.update({
     "oran": "Oran",
     "constantine": "Constantine",
     "annaba": "Annaba",
-    "setif": "Sétif",
+    "setif": "SÃ©tif",
     "tlemcen": "Tlemcen",
-    "bejaia": "Béjaïa",
+    "bejaia": "BÃ©jaÃ¯a",
     "jijel": "Jijel",
     "skikda": "Skikda",
     "blida": "Blida",
     "tizi ouzou": "Tizi Ouzou",
-    "boumerdes": "Boumerdès",
+    "boumerdes": "BoumerdÃ¨s",
 })
 
 # List for schema (exact names)
@@ -147,3 +147,4 @@ def get_wilaya_code(name):
     for c,n in WILAYA_CODE_TO_NAME.items():
         if n.lower() == norm.lower(): return c
     return 0
+

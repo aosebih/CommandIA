@@ -21,88 +21,44 @@ class OrderStatus(str, Enum):
     REQUIRES_HUMAN = "REQUIRES_HUMAN"
 
 
-class ProductDetails(BaseModel):
-    """Product details for the order."""
-    item_id: str = Field(..., description="Product/item identifier")
+class OrderItem(BaseModel):
+    """Individual order item."""
+    product_name: str = Field(..., description="Product name")
     quantity: int = Field(..., ge=1, description="Quantity of items")
-    size_color: str = Field(..., description="Size and/or color specification")
+    size_color: Optional[str] = Field(default=None, description="Size and/or color specification")
+    unit_price_da: Optional[float] = Field(default=None, ge=0, description="Unit price in Algerian Dinars")
 
 
-class OrderExtraction(BaseModel):
-    """
-    The 5 Sacred Fields schema for AI extraction.
-    These fields must be collected before confirming an order (PRD 3.2).
-    """
-    # Field 1: Full Name
-    customer_name: str = Field(
-        ...,
-        min_length=2,
-        description="Full name (must contain at least a first name)"
-    )
-    
-    # Field 2: Phone Number - Algerian format
-    phone_number: str = Field(
-        ...,
-        description="Algerian phone number starting with 05, 06, or 07 (10 digits total)"
-    )
-    
-    # Field 3: Wilaya - Algerian province
-    wilaya: str = Field(
-        ...,
-        description="Algerian Wilaya (must match one of the 58 official Wilayas)"
-    )
-    
-    # Field 4: Delivery Type
-    delivery_type: DeliveryType = Field(
-        ...,
-        description="Delivery type: HOME (domicile) or DESK (point relais/bureau)"
-    )
-    
-    # Field 5: Address
-    address: str = Field(
-        ...,
-        min_length=3,
-        description="Delivery address: Commune/street for HOME, or location for DESK"
-    )
-    
-    @field_validator("phone_number")
-    @classmethod
-    def validate_algerian_phone(cls, v: str) -> str:
-        """
-        Validate Algerian phone number format.
-        Must start with 05, 06, or 07 and be exactly 10 digits.
-        """
-        # Remove spaces, dashes, or other separators
-        cleaned = re.sub(r"[\s\-\(\)]", "", v)
-        # Check format: starts with 05,06,07 and has 10 digits total
-        if not re.match(r"^(05|06|07)\d{8}$", cleaned):
-            raise ValueError(
-                "Invalid Algerian phone number. Must start with 05, 06, or 07 and be 10 digits total."
-            )
-        return cleaned
+class OrderExtractionData(BaseModel):
+    """Extracted order data."""
+    customer_name: Optional[str] = Field(default=None)
+    phone_number: Optional[str] = Field(default=None)
+    wilaya_code: Optional[int] = Field(default=None, ge=1, le=69)
+    delivery_type: Optional[DeliveryType] = Field(default=None)
+    address: Optional[str] = Field(default=None)
+    order_items: list[OrderItem] = Field(default_factory=list)
+    subtotal_da: Optional[float] = Field(default=None, ge=0)
+    shipping_fee_da: Optional[float] = Field(default=None, ge=0)
+    total_price_da: Optional[float] = Field(default=None, ge=0)
+    order_status: OrderStatus = Field(default=OrderStatus.PENDING_CONFIRMATION)
+
+
+class OrderExtractionResponse(BaseModel):
+    """Full extraction response."""
+    reply_to_customer: str = Field(...)
+    extracted_data: OrderExtractionData = Field(...)
 
 
 class Order(BaseModel):
-    """
-    Complete order structure matching the exact JSON schema from roadmap.
-    """
+    """Complete order structure."""
     order_id: str = Field(..., description="UUID v4 for the order")
-    customer_name: str = Field(...)
-    phone_number: str = Field(...)
-    wilaya: str = Field(...)
-    delivery_type: DeliveryType = Field(...)
-    address: str = Field(...)
-    product_details: ProductDetails = Field(...)
-    total_price_da: float = Field(ge=0, description="Total price in Algerian Dinars")
+    customer_name: Optional[str] = Field(default=None)
+    phone_number: Optional[str] = Field(default=None)
+    wilaya_code: Optional[int] = Field(default=None)
+    delivery_type: Optional[DeliveryType] = Field(default=None)
+    address: Optional[str] = Field(default=None)
+    order_items: list[OrderItem] = Field(default_factory=list)
+    subtotal_da: Optional[float] = Field(default=None)
+    shipping_fee_da: Optional[float] = Field(default=None)
+    total_price_da: Optional[float] = Field(default=None)
     order_status: OrderStatus = Field(default=OrderStatus.PENDING_CONFIRMATION)
-    
-    @field_validator("phone_number")
-    @classmethod
-    def validate_algerian_phone(cls, v: str) -> str:
-        """Validate Algerian phone number format."""
-        cleaned = re.sub(r"[\s\-\(\)]", "", v)
-        if not re.match(r"^(05|06|07)\d{8}$", cleaned):
-            raise ValueError(
-                "Invalid Algerian phone number. Must start with 05, 06, or 07 and be 10 digits total."
-            )
-        return cleaned

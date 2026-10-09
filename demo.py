@@ -1,14 +1,12 @@
-"""
-CommandIA AI Demo - Interactive demo of the AI module.
-"""
+
 import os
 from ai_service import AIService
 
 def demo():
-    """Interactive demo."""
-    print("=" * 60)
+    
+  
     print("CommandIA AI Brain Demo (Gemini API + Pydantic)")
-    print("=" * 60)
+   
     print()
     
     if not os.getenv("GEMINI_API_KEY"):

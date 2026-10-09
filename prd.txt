@@ -1,0 +1,129 @@
+CommandIA - Product Requirements Document v1.0
+Page 1
+Product Requirements Document (PRD)
+CommandIA
+Version 1.0 (MVP Sprint)
+Project Name: CommandIA
+Mission: To eliminate social media sales friction for Algerian e-commerce businesses by deploying an AI
+assistant that handles inquiries, closes sales in DMs, and extracts structured, ready-to-ship orders.
+Version: 1.0 (MVP Sprint)
+1. Product Overview & Value Proposition
+The Problem
+Algerian e-commerce relies heavily on Cash on Delivery (COD) via Meta platforms (Instagram/Facebook).
+Merchants spend excessive time manually answering repetitive questions (e.g., "Prix?", "Livraison?") and
+manually extracting unstructured delivery details from DMs, leading to high error rates and returned
+packages.
+The Solution
+CommandIA is a conversational engine that plugs into Meta APIs. It speaks the local dialects, answers
+product questions, guides the user to a purchase, and automatically extracts structured order data directly
+into a merchant dashboard.
+2. Core Features (MVP Scope)
+For the MVP, we are building three core components:
+Component
+Description
+The Webhook Pipeline
+Connecting Meta Graph API to our backend.
+The AI Brain
+The LLM engine trained on local dialects to converse and extract JSON data.
+The Merchant Dashboard
+A UI where merchants view orders and manage their product catalog.
+3. Business Logic & AI Conversational Rules
+3.1 Language & Identity Rules
+Input Recognition: The AI must seamlessly process inputs in four languages/dialects:
+  Algerian Darija (Arabic script)
+ Franco-Arabic (Latin script with numerals, e.g., "bchhal", "3andkom")
+ French
+ English
+CommandIA - Product Requirements Document v1.0
+Page 2
+Output Consistency: The AI should mirror the language of the user's initial message. If the user speaks
+Darija, reply in Darija. If they speak French, reply in French.
+Tone: Polite, professional, and commercial. The primary directive is to close a confirmed order or answer
+a product inquiry quickly.
+3.2 The "5 Sacred Fields" Data Extraction
+The AI cannot mark an order as "Confirmed" until it successfully collects, validates, and stores these 5
+specific fields:
+#
+Field
+Validation Rule
+1
+Full Name
+Must contain at least a first name.
+2
+Phone Number
+Must be a valid Algerian number starting with 05, 06, or 07 (10 digits). If invalid,
+the bot must prompt the user to correct it.
+3
+Wilaya
+Must match one of the 58 official Algerian Wilayas.
+4
+Delivery Type
+The user must explicitly choose between: Home Delivery (à domicile / l'dar) or
+Desk/Office Delivery (Stop-desk / point relais / bureau) - only if the merchant has
+enabled this option.
+5
+Address
+(Commune/Street)
+If Home Delivery: a detailed address (Commune, street, or clear location
+details).
+If Desk Delivery: the specific Commune or agency location.
+3.3 Pricing & Negotiation Guardrails
+  No Unauthorized Discounts: The AI must never offer or accept a discount unless a specific rule is
+enabled in the merchant's dashboard.
+ Haggle Defense: If a user attempts to negotiate ("Nqassli chwiya?"), the AI politely declines and
+redirects to the purchase ("Les prix sont fixes, mais la qualité est garantie!").
+ Dynamic Shipping Calculation: The AI must add the correct shipping fee based on the selected
+Wilaya and Delivery Type (Home vs. Desk) to calculate the final Total Price.
+4. System Architecture & Workflow State Machine
+The AI must track the user's progress through a defined conversational state machine to prevent infinite
+loops.
+State Definitions
+State
+Name
+Behavior
+State 0
+Inquiry
+User asks a question (price, size, color). AI identifies the product and answers.
+State 1
+Order Intent
+User indicates they want to buy. AI begins the collection loop.
+State 2
+Data Collection
+AI systematically asks for the 5 Sacred Fields (Name, Phone, Wilaya, Delivery
+Type, Address).
+State 3
+Confirmation
+AI summarizes the order (Items, Delivery Type, Address, Total Price including
+shipping) and asks for final validation.
+CommandIA - Product Requirements Document v1.0
+Page 3
+State
+Name
+Behavior
+Escalation
+Human Handoff
+If the user is frustrated, asks for custom bulk pricing, or if the bot fails to
+extract valid data after 3 attempts, it pauses and flags the chat for human
+intervention.
+5. Technical Requirements & Stack
+Layer
+Technology
+Backend / Middleware
+Python (FastAPI). Responsible for receiving Meta webhooks and managing the API
+pipeline.
+AI Engine
+OpenAI (gpt-4o-mini) or Anthropic (claude-3-5-haiku).
+Data Parsing
+Pydantic (Python) or Instructor to enforce strict JSON schemas for the 5 Sacred
+Fields.
+Database
+Supabase (PostgreSQL). Tables required: Merchants, Products, Orders,
+Conversations.
+Frontend (Dashboard)
+Next.js (React) + Tailwind CSS.
+6. Success Metrics for MVP
+To prove the viability of CommandIA during the ThirdUni program, we must achieve:
+  Successful Webhook Integration: The system can reliably receive and reply to real Instagram DMs.
+ Extraction Accuracy: The AI correctly formats the 5 Sacred Fields into JSON in 90%+ of test cases.
+ Merchant Onboarding: The dashboard successfully connects to a test merchant's Meta account and
+displays incoming orders in real-time.

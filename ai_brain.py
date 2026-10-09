@@ -1,8 +1,4 @@
-"""
-CommandIA AI Brain - Gemini LLM Integration
-Handles conversation, extraction of 5 Sacred Fields, state management, and JSON output.
-Uses Gemini API via google-genai SDK with Pydantic schema enforcement.
-"""
+
 import uuid
 import json
 from typing import Optional, Dict, Any, List
@@ -13,13 +9,13 @@ from google.genai import types
 from pydantic import ValidationError
 
 from config import GEMINI_API_KEY, GEMINI_MODEL, MAX_RETRIES
-from schemas import OrderExtraction, Order, OrderStatus, DeliveryType, ProductDetails
+from schemas import OrderExtractionResponse, Order, OrderStatus, DeliveryType, OrderItem
 from system_prompt import SYSTEM_PROMPT_V1
-from wilayas import ALGERIAN_WILAYAS_LIST, is_valid_wilaya
+from wilayas import ALGERIAN_WILAYAS_LIST, is_valid_wilaya, get_wilaya_code, get_wilaya_name
 
 
 class ConversationState:
-    """Track conversation state and collected fields."""
+    
     
     def __init__(self, conversation_id: Optional[str] = None):
         self.conversation_id = conversation_id or str(uuid.uuid4())
@@ -28,7 +24,7 @@ class ConversationState:
         self.missing_fields: List[str] = [
             "customer_name",
             "phone_number", 
-            "wilaya",
+            "wilaya_code",
             "delivery_type",
             "address"
         ]
@@ -128,14 +124,14 @@ class AIBrain:
     def _update_missing_fields(self, extracted: Dict[str, Any]) -> List[str]:
         """Update list of missing fields based on extraction."""
         missing = []
-        required = ["customer_name", "phone_number", "wilaya", "delivery_type", "address"]
+        required = ["customer_name", "phone_number", "wilaya_code", "delivery_type", "address"]
         for field in required:
             value = extracted.get(field)
             if not value or (isinstance(value, str) and value.strip() == ""):
                 missing.append(field)
-            # Validate specific fields
-            elif field == "wilaya" and not is_valid_wilaya(value):
-                missing.append(field)
+            elif field == "wilaya_code":
+                if not isinstance(value, int) or not (1 <= value <= 69):
+                    missing.append(field)
             elif field == "phone_number":
                 try:
                     cleaned = ''.join(filter(str.isdigit, str(value)))
@@ -148,20 +144,43 @@ class AIBrain:
     def _create_fallback_order(self, state: ConversationState) -> Dict[str, Any]:
         """Create a fallback order structure with collected data."""
         collected = state.collected_fields
+        order_items = []
+        if state.product_context.get("order_items"):
+            order_items = state.product_context.get("order_items")
+        else:
+            # Keep legacy product details if present
+            pd = state.product_context
+            if pd.get("product_name") or pd.get("item_id"):
+                order_items = [{
+                    "product_name": pd.get("product_name") or pd.get("item_id", "unknown"),
+                    "quantity": pd.get("quantity", 1),
+                    "size_color": pd.get("size_color"),
+                    "unit_price_da": pd.get("unit_price_da"),
+                }]
+        
+        # Compute totals
+        subtotal = 0.0
+        for item in order_items:
+            qty = int(item.get("quantity", 0)) if item.get("quantity") else 0
+            price = float(item.get("unit_price_da", 0)) if item.get("unit_price_da") is not None else 0
+            subtotal += qty * price
+        shipping = float(state.product_context.get("shipping_fee_da", 0)) if state.product_context.get("shipping_fee_da") is not None else 0
+        total = subtotal + shipping
+        
         return {
-            "order_id": str(uuid.uuid4()),
-            "customer_name": collected.get("customer_name", ""),
-            "phone_number": collected.get("phone_number", ""),
-            "wilaya": collected.get("wilaya", ""),
-            "delivery_type": collected.get("delivery_type", "HOME"),
-            "address": collected.get("address", ""),
-            "product_details": {
-                "item_id": state.product_context.get("item_id", "unknown"),
-                "quantity": state.product_context.get("quantity", 1),
-                "size_color": state.product_context.get("size_color", ""),
-            },
-            "total_price_da": float(state.product_context.get("total_price_da", 0)),
-            "order_status": OrderStatus.REQUIRES_HUMAN.value if state.escalated else OrderStatus.PENDING_CONFIRMATION.value,
+            "reply_to_customer": "",
+            "extracted_data": {
+                "customer_name": collected.get("customer_name"),
+                "phone_number": collected.get("phone_number"),
+                "wilaya_code": collected.get("wilaya_code"),
+                "delivery_type": collected.get("delivery_type"),
+                "address": collected.get("address"),
+                "order_items": order_items,
+                "subtotal_da": subtotal,
+                "shipping_fee_da": shipping,
+                "total_price_da": total,
+                "order_status": OrderStatus.REQUIRES_HUMAN.value if state.escalated else OrderStatus.PENDING_CONFIRMATION.value,
+            }
         }
     
     def process_message(
@@ -252,8 +271,12 @@ Be precise and follow all guardrails.
             
             # Parse JSON response
             parsed = self._parse_ai_response(response_text_raw)
-            response_text = parsed.get("response_text", "Je n'ai pas compris. Peux-tu répéter ?")
-            order_data = parsed.get("order_data", self._create_fallback_order(conversation_state))
+            response_text = parsed.get("reply_to_customer") or parsed.get("response_text") or "Je n'ai pas compris. Peux-tu répéter ?"
+            extracted = parsed.get("extracted_data", parsed.get("order_data", {}))
+            order_data = {
+                "reply_to_customer": response_text,
+                "extracted_data": extracted
+            }
             
             # Validate and update conversation state
             self._update_conversation_state(conversation_state, order_data, user_message, response_text)
@@ -355,25 +378,34 @@ Be precise and follow all guardrails.
         
         # Update collected fields
         if order_data:
+            extracted = order_data.get("extracted_data", order_data)
             # Extract fields
-            for field in ["customer_name", "phone_number", "wilaya", "delivery_type", "address"]:
-                val = order_data.get(field)
-                if val and str(val).strip():
+            for field in ["customer_name", "phone_number", "wilaya_code", "wilaya", "delivery_type", "address"]:
+                val = extracted.get(field)
+                if val is not None and str(val).strip():
                     state.collected_fields[field] = val
             
-            # Product details
-            pd = order_data.get("product_details", {})
-            if pd:
+            # Normalize wilaya_code from wilaya name if needed
+            if state.collected_fields.get("wilaya_code") is None and state.collected_fields.get("wilaya"):
+                code = get_wilaya_code(state.collected_fields.get("wilaya"))
+                if code:
+                    state.collected_fields["wilaya_code"] = code
+            
+            # Product details/items
+            if extracted.get("order_items"):
+                state.product_context["order_items"] = extracted["order_items"]
+            elif extracted.get("product_details"):
+                pd = extracted.get("product_details", {})
                 state.product_context.update(pd)
-            if "total_price_da" in order_data:
-                state.product_context["total_price_da"] = order_data["total_price_da"]
-            if "order_status" in order_data:
-                status = order_data["order_status"]
-                if status == "REQUIRES_HUMAN":
-                    state.escalated = True
-                    state.state = "ESCALATION"
-                elif status == "CONFIRMED":
-                    state.state = "CONFIRMATION"
+            for key in ["subtotal_da", "shipping_fee_da", "total_price_da"]:
+                if key in extracted and extracted[key] is not None:
+                    state.product_context[key] = extracted[key]
+            status = extracted.get("order_status") or order_data.get("order_status")
+            if status == "REQUIRES_HUMAN":
+                state.escalated = True
+                state.state = "ESCALATION"
+            elif status == "CONFIRMED":
+                state.state = "CONFIRMATION"
         
         # Update missing fields
         state.missing_fields = self._update_missing_fields(state.collected_fields)

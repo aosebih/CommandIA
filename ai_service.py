@@ -1,16 +1,9 @@
-"""
-AI Service wrapper for CommandIA.
-Provides clean interface for processing messages with Gemini API.
-"""
+
 from typing import Optional, Dict, Any
 from ai_brain import AIBrain, ConversationState
 
 
 class AIService:
-    """
-    Service layer for AI operations.
-    Uses Gemini API (no fine-tuning) as specified in requirements.
-    """
     
     def __init__(self, api_key: Optional[str] = None):
         self.brain = AIBrain(api_key=api_key)

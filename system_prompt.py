@@ -56,6 +56,7 @@ Required JSON structure:
 ```json
 {
   "reply_to_customer": "String (The exact text message to send back to the user in their language)",
+  "conversation_state": "INQUIRY|ORDER_INTENT|DATA_COLLECTION|CONFIRMATION",
   "extracted_data": {
     "customer_name": "String or null",
     "phone_number": "String or null",
@@ -79,6 +80,11 @@ Required JSON structure:
 ```
 
 ## Extraction Guidelines
+- Always report the current conversational state in "conversation_state":
+  INQUIRY for a product question, ORDER_INTENT as soon as the user signals they
+  want to buy (any wording: "nchri", "bghit nchri", "je veux acheter", "je
+  souhaite commander", "I want to order"), DATA_COLLECTION while collecting
+  the five fields, CONFIRMATION once every field is collected.
 - When collecting data progressively, include fields as you extract them (null/unknown if missing). Only mark CONFIRMED when all five required fields are valid and the user explicitly confirms.
 - Validate phone number format before accepting.
 - Extract product context from conversation. Allow customers to order multiple distinct products in a single chat (multiple order_items).

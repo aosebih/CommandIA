@@ -1,20 +1,95 @@
 
 import uuid
 import json
+import logging
 import re
+import time
+import unicodedata
 from typing import Optional, Dict, Any, List
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    GEMINI_MODEL_FALLBACKS,
+    MAX_RETRIES,
+    RETRY_BASE_DELAY,
+)
 from schemas import (
     DeliveryType,
     OrderExtractionData,
     OrderExtractionResponse,
     OrderStatus,
+    normalize_algerian_phone,
 )
 from system_prompt import SYSTEM_PROMPT_V1
 from wilayas import get_wilaya_code, get_wilaya_name
+
+logger = logging.getLogger("commandia.ai_brain")
+
+# HTTP-ish codes worth retrying: rate limits and temporary upstream failures.
+TRANSIENT_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
+
+# --- Language detection lexicon -------------------------------------------------
+# Franco-Arabic is Algerian Darija written in Latin script. Its markers are
+# distinctive enough to be matched on word boundaries without false positives.
+FRANCO_ARABIC_MARKERS = (
+    "3afak", "3afakom", "3andkom", "3andkoum", "3andna", "3andek", "3jbat", "3la",
+    "3lik", "3lih", "3nin", "3tina", "3tini", "3tawa", "3te", "7ala", "7awl", "7el",
+    "9dek", "9ndek", "9oul", "9der", "ahlan", "b9a", "b9der", "bch", "bchhal",
+    "bchh", "bghit", "bghitk", "bghitna", "bqa", "b9der", "bzaf", "bzid", "chhal",
+    "chhalna", "chri", "chwiya", "daba", "daba3", "esmi", "fhamt", "fhamtach", "ghib",
+    "hach", "hadi", "hal", "hna", "howa", "ismi", "kifach", "kifak", "kifakna",
+    "kifakom", "kifak", "kona", "kont", "kontom", "labas", "m3a", "m3ak", "m3li",
+    "m3lik", "machi", "marhaba", "mes", "mch", "mchhol", "mrad", "mrhaba", "mrabet",
+    "msa", "mzn", "n9der", "nchri", "nchrih", "najem", "nas", "ndir", "njem",
+    "rahma", "rani", "rannikh", "safi", "salam", "slama", "smahli", "sme7li",
+    "t9der", "t9derk", "ta3i", "ta3", "tekber", "telefon", "tel", "thmen", "w7id",
+    "wach", "wa5", "wllah", "y7it", "ya3tik", "ya3tini", "ye3tik", "zid", "numero",
+)
+FRANCO_ARABIC_PHRASES = (
+    "ana men", "men had", "bch nchri", "chhal thmen", "bchhal", "kifach hna",
+    "wach kifach", "nchri had", "bghit nchri", "kifak hna", "m3a slama",
+    "salam", "labas", "mrabet", "ahlan", "tekber", "3afak", "ya3tik", "msa",
+    "mrhba", "chhal", "bchhal", "tchri", "kifachk",
+)
+# A word starting with 3, 7 or 9 followed by letters is a strong Darija-latin
+# signal ("3andkom", "9ndek", "7awl"). Prices such as "3500" are excluded
+# because they contain no letter.
+FRANCO_ARABIC_DIGIT_PATTERN = re.compile(r"\b[379][a-z]{2,}\b")
+
+FRENCH_MARKERS = (
+    "adresse", "algerie", "argent", "bureau", "cher", "chere", "commande",
+    "commander", "combien", "couleur", "disponible", "domicile", "interesse",
+    "livraison", "livrer", "livrez", "marque", "merci", "modele", "paiement",
+    "pointure", "prix", "qualite", "reference", "salut", "santec", "sizes",
+    "taille", "tapis", "telephone", "wilaya", "wilti",
+)
+ENGLISH_MARKERS = (
+    "available", "can i", "colour", "delivery", "do you have", "evening",
+    "good", "hello", "hey", "home delivery", "how much", "interested", "looking",
+    "morning", "need", "order", "please", "price", "ship", "shipping", "size",
+    "stock", "thank", "want", "buy",
+)
+
+# Unambiguous purchase expressions, used only when the model does not report a
+# conversational state. Kept deliberately narrow: a false positive would push a
+# price question into the ordering flow.
+ORDER_INTENT_MARKERS = (
+    "nchri", "3tini", "3tina", "acheter", "achete", "commander", "commande",
+    "i want to buy", "i want to order", "i want to purchase", "i would like to order",
+    "i'd like to order", "let me order", "buy it",
+)
+
+
+def _strip_accents(text: str) -> str:
+    """Remove diacritics so "achete" also matches "achète"."""
+    return "".join(
+        char for char in unicodedata.normalize("NFD", text)
+        if unicodedata.category(char) != "Mn"
+    )
 
 
 class ConversationState:
@@ -34,6 +109,9 @@ class ConversationState:
         self.attempts = 0
         self.failed_data_attempts = 0
         self.language = "franco_arabic"
+        # Locked on the first turn: the AI mirrors the language of the user's
+        # initial message for the whole conversation (PRD 3.1).
+        self.initial_language: Optional[str] = None
         self.product_context: Dict[str, Any] = {}
         self.user_message_history: List[str] = []
         self.assistant_message_history: List[str] = []
@@ -49,33 +127,134 @@ class AIBrain:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY not found. Set it in environment variables.")
         
-       
         self.client = genai.Client(api_key=self.api_key)
         self.model = model
+        # Primary model first, then the configured fallbacks (deduplicated).
+        candidates = [model] + list(GEMINI_MODEL_FALLBACKS or [])
+        self.models = list(dict.fromkeys(m for m in candidates if m))
         self.system_prompt = SYSTEM_PROMPT_V1
+
+    @staticmethod
+    def _is_transient(error: Exception) -> bool:
+        """Return True for rate limits and temporary upstream failures."""
+        code = getattr(error, "code", None)
+        if not isinstance(code, int):
+            return False
+        return code in TRANSIENT_STATUS_CODES or 500 <= code < 600
+
+    def _generate_config(self) -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            temperature=0.3,  # Lower temp for more consistent extraction
+            top_p=0.95,
+            top_k=40,
+            max_output_tokens=2048,
+            response_mime_type="application/json",
+            response_schema=OrderExtractionResponse,
+        )
+
+    def _generate_content(self, prompt: str) -> Any:
+        """
+        Call Gemini, retrying transient failures and falling back to other models.
+
+        Retries only happen for rate limits and 5xx errors. Configuration and
+        authentication failures (400/401/403/404) are never retried, because
+        retrying them just delays the error the operator needs to see.
+        """
+        last_error: Optional[Exception] = None
+
+        for model in self.models:
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    response = self.client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=self._generate_config(),
+                    )
+                    if not response.text:
+                        raise ValueError(f"Gemini ({model}) returned an empty response")
+                    return response
+                except genai_errors.APIError as error:
+                    last_error = error
+                    if not self._is_transient(error):
+                        logger.error(
+                            "Gemini call failed permanently (model=%s, code=%s): %s",
+                            model,
+                            getattr(error, "code", None),
+                            error,
+                        )
+                        break
+                    if attempt >= MAX_RETRIES:
+                        logger.error(
+                            "Gemini call exhausted retries (model=%s, code=%s): %s",
+                            model,
+                            getattr(error, "code", None),
+                            error,
+                        )
+                        break
+                    delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.warning(
+                        "Gemini call failed (model=%s, attempt=%d/%d, code=%s): %s. "
+                        "Retrying in %.1fs",
+                        model,
+                        attempt,
+                        MAX_RETRIES,
+                        getattr(error, "code", None),
+                        error,
+                        delay,
+                    )
+                    time.sleep(delay)
+                except ValueError:
+                    raise
+                except Exception as error:  # noqa: BLE001 - surfaced to the caller
+                    last_error = error
+                    logger.error("Unexpected error while calling Gemini (%s): %s", model, error)
+                    break
+
+        if last_error is None:
+            raise RuntimeError("No Gemini model configured")
+        raise last_error
+
     
     def _detect_language(self, message: str) -> str:
-        
-        # Count Arabic characters (Darija in Arabic script)
-        arabic_chars = sum(1 for c in message if '\u0600' <= c <= '\u06FF' or '\u0750' <= c <= '\u077F')
-        total_chars = len(message.strip())
-        
-        if total_chars == 0:
-            return "franco_arabic"
-        
-        if arabic_chars / total_chars > 0.3:
-            return "darija"
-        
-        franco_patterns = ['3', '7', '9', '2', '5', 'kh', 'ch', 'gh', 'bch', 't9', 'kifach', 'wach', 'rani', '3tini', 'bghit']
-        message_lower = message.lower()
-        if any(p in message_lower for p in franco_patterns):
-            return "franco_arabic"
-        
-        french_keywords = ['bonjour', 'merci', 'prix', 'livraison', 'commande', 'acheter', 'veux']
-        if any(k in message_lower for k in french_keywords):
-            return "french"
+        """
+        Detect the language/dialect of a message.
 
-        return "english"
+        Order matters: Arabic script wins first, then Franco-Arabic (which
+        contains many French loanwords), then French, then English. Digits
+        alone are never a signal: "Bonjour, prix 2500 DA" is French.
+        """
+        text = (message or "").strip()
+        if not text:
+            return "franco_arabic"
+
+        # 1. Darija written in Arabic script.
+        arabic_chars = sum(
+            1 for c in text if "\u0600" <= c <= "\u06FF" or "\u0750" <= c <= "\u077F"
+        )
+        if arabic_chars / len(text) > 0.3:
+            return "darija"
+
+        lowered = text.casefold()
+
+        # 2. Franco-Arabic (Darija in Latin script).
+        if any(phrase in lowered for phrase in FRANCO_ARABIC_PHRASES):
+            return "franco_arabic"
+        if FRANCO_ARABIC_DIGIT_PATTERN.search(lowered):
+            return "franco_arabic"
+        tokens = set(re.findall(r"[a-z0-9']+", lowered))
+        if tokens & set(FRANCO_ARABIC_MARKERS):
+            return "franco_arabic"
+
+        # 3. French, then English.
+        if tokens & set(FRENCH_MARKERS):
+            return "french"
+        if tokens & set(ENGLISH_MARKERS):
+            return "english"
+        if any(marker in lowered for marker in ENGLISH_MARKERS):
+            return "english"
+
+        # French is the most common written language of the target market.
+        return "french"
     
     def _update_missing_fields(self, extracted: Dict[str, Any]) -> List[str]:
         missing = []
@@ -90,6 +269,11 @@ class AIBrain:
             value = extracted.get(field)
             if value is None or (isinstance(value, str) and not value.strip()):
                 missing.append(field)
+            elif field == "phone_number":
+                # Re-validate on every turn: a stored value must stay a valid
+                # Algerian number, not merely a non-empty string.
+                if normalize_algerian_phone(value) is None:
+                    missing.append(field)
             elif field == "wilaya_code" and get_wilaya_name(value) is None:
                 missing.append(field)
         return missing
@@ -174,9 +358,12 @@ class AIBrain:
         if product_context:
             conversation_state.product_context.update(product_context)
         
-        # Detect language
+        # Detect language. The PRD mirror rule locks the language of the very
+        # first message for the rest of the conversation.
         detected_lang = self._detect_language(user_message)
-        conversation_state.language = detected_lang
+        if conversation_state.initial_language is None:
+            conversation_state.initial_language = detected_lang
+        conversation_state.language = conversation_state.initial_language
         conversation_state.attempts += 1
         
         # Build conversation context
@@ -209,41 +396,37 @@ class AIBrain:
 {user_message}
 
 ## Instructions
-Respond with a helpful message in the user's language ({detected_lang}), AND extract any order information into valid JSON matching the exact schema.
+Respond with a helpful message in the user's language ({conversation_state.language}), AND extract any order information into valid JSON matching the exact schema.
 If escalation is needed (frustrated, bulk pricing request, or 3 failed data-collection attempts), set order_status to "REQUIRES_HUMAN".
 Only set order_status to "CONFIRMED" if ALL 5 Sacred Fields are valid AND user explicitly confirms.
 
 Return only the JSON object matching this exact shape:
-{{"reply_to_customer": "message", "extracted_data": {{"customer_name": null, "phone_number": null, "wilaya_code": null, "delivery_type": null, "address": null, "order_items": [], "subtotal_da": null, "shipping_fee_da": null, "total_price_da": null, "order_status": "PENDING_CONFIRMATION"}}}}
+{{"reply_to_customer": "message", "conversation_state": "INQUIRY|ORDER_INTENT|DATA_COLLECTION|CONFIRMATION", "extracted_data": {{"customer_name": null, "phone_number": null, "wilaya_code": null, "delivery_type": null, "address": null, "order_items": [], "subtotal_da": null, "shipping_fee_da": null, "total_price_da": null, "order_status": "PENDING_CONFIRMATION"}}}}
 
 Be precise and follow all guardrails.
 """
         
         try:
-            # Call Gemini API with structured thinking
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.3,  # Lower temp for more consistent extraction
-                    top_p=0.95,
-                    top_k=40,
-                    max_output_tokens=2048,
-                    response_mime_type="application/json",
-                    response_schema=OrderExtractionResponse,
-                ),
-            )
+            # Call Gemini API (retries + model fallbacks handled internally)
+            response = self._generate_content(full_prompt)
             
             response_text_raw = response.text if response.text else ""
             
             # Parse JSON response
             parsed = self._parse_ai_response(response_text_raw)
+            parsed = self._sanitize_extraction(parsed)
             extraction = OrderExtractionResponse.model_validate(parsed)
             response_text = extraction.reply_to_customer
             order_data = extraction.extracted_data.model_dump(mode="json")
             
             # Validate and update conversation state
-            self._update_conversation_state(conversation_state, order_data, user_message, response_text)
+            self._update_conversation_state(
+                conversation_state,
+                order_data,
+                user_message,
+                response_text,
+                model_state=parsed.get("conversation_state"),
+            )
             order_data["order_status"] = conversation_state.order_status
             
             return {
@@ -259,24 +442,154 @@ Be precise and follow all guardrails.
                 "language": conversation_state.language,
             }
             
-        except Exception:
-            fallback_data = self._create_fallback_order(conversation_state)
-            fallback_text = self._get_fallback_response(conversation_state.language)
-            conversation_state.assistant_message_history.append(fallback_text)
-            
-            return {
-                "reply_to_customer": fallback_text,
-                "extracted_data": fallback_data,
-                "response_text": fallback_text,
-                "order_data": self._to_legacy_order(conversation_state, fallback_data),
-                "conversation_id": conversation_state.conversation_id,
-                "state": conversation_state.state,
-                "missing_fields": conversation_state.missing_fields,
-                "collected_fields": conversation_state.collected_fields,
-                "escalated": conversation_state.escalated,
-                "error": "AI response could not be generated or validated",
-            }
+        except genai_errors.APIError as error:
+            # Configuration / auth / model errors must not look like a user error.
+            code = getattr(error, "code", None)
+            if self._is_transient(error):
+                logger.warning("Gemini unavailable (transient, code=%s): %s", code, error)
+                error_detail = f"AI provider temporarily unavailable (code {code})"
+            else:
+                logger.error("Gemini configuration error (code=%s): %s", code, error)
+                error_detail = f"AI provider configuration error (code {code}): {error}"
+            return self._build_fallback_result(conversation_state, error_detail)
+
+        except Exception as error:  # noqa: BLE001 - never crash the webhook
+            logger.exception("Unexpected failure while processing the message")
+            return self._build_fallback_result(
+                conversation_state,
+                f"AI response could not be generated or validated: {error}",
+            )
+
+    def _build_fallback_result(
+        self,
+        conversation_state: ConversationState,
+        error_detail: str,
+    ) -> Dict[str, Any]:
+        """Build the degraded response used when the AI pipeline fails."""
+        fallback_data = self._create_fallback_order(conversation_state)
+        fallback_text = self._get_fallback_response(conversation_state.language)
+        conversation_state.assistant_message_history.append(fallback_text)
+
+        return {
+            "reply_to_customer": fallback_text,
+            "extracted_data": fallback_data,
+            "response_text": fallback_text,
+            "order_data": self._to_legacy_order(conversation_state, fallback_data),
+            "conversation_id": conversation_state.conversation_id,
+            "state": conversation_state.state,
+            "missing_fields": conversation_state.missing_fields,
+            "collected_fields": conversation_state.collected_fields,
+            "escalated": conversation_state.escalated,
+            "language": conversation_state.language,
+            "error": error_detail,
+        }
     
+    def _sanitize_extraction(self, parsed: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize the raw model output before strict validation.
+
+        The model occasionally returns a slightly malformed field (a phone
+        number with a typo, a wilaya code out of range, a delivery type in
+        the wrong case). Validating strictly would raise and throw away every
+        other field the model did extract, losing the whole order. Invalid
+        values are therefore dropped to None here, and the strict Pydantic
+        contract still runs afterwards.
+        """
+        if not isinstance(parsed, dict):
+            return parsed
+
+        data = parsed.get("extracted_data")
+        if not isinstance(data, dict):
+            data = {}
+        data = dict(data)
+
+        # Phone number: keep it only when it is a valid Algerian mobile.
+        data["phone_number"] = normalize_algerian_phone(data.get("phone_number"))
+
+        # Wilaya code: keep it only when it maps to a known wilaya.
+        wilaya_code = data.get("wilaya_code")
+        if wilaya_code is not None:
+            try:
+                wilaya_code = int(wilaya_code)
+            except (TypeError, ValueError):
+                wilaya_code = None
+            if wilaya_code is None or get_wilaya_name(wilaya_code) is None:
+                wilaya_code = None
+        data["wilaya_code"] = wilaya_code
+
+        # Delivery type: case-insensitive, restricted to the enum values.
+        delivery_type = data.get("delivery_type")
+        if delivery_type is not None:
+            delivery_type = str(delivery_type).strip().upper()
+            if delivery_type not in {item.value for item in DeliveryType}:
+                delivery_type = None
+        data["delivery_type"] = delivery_type
+
+        # Order status: fall back to the safe default when unknown.
+        order_status = data.get("order_status")
+        if order_status is not None:
+            order_status = str(order_status).strip().upper()
+            if order_status not in {item.value for item in OrderStatus}:
+                order_status = OrderStatus.PENDING_CONFIRMATION.value
+        else:
+            order_status = OrderStatus.PENDING_CONFIRMATION.value
+        data["order_status"] = order_status
+
+        # Order items: drop malformed entries instead of failing the turn.
+        items = data.get("order_items")
+        cleaned_items: List[Dict[str, Any]] = []
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                product_name = item.get("product_name")
+                if not isinstance(product_name, str) or not product_name.strip():
+                    continue
+                try:
+                    quantity = int(item.get("quantity") or 1)
+                except (TypeError, ValueError):
+                    quantity = 1
+                quantity = max(1, quantity)
+                unit_price = item.get("unit_price_da")
+                if unit_price is not None:
+                    try:
+                        unit_price = float(unit_price)
+                    except (TypeError, ValueError):
+                        unit_price = None
+                    if unit_price is not None and unit_price < 0:
+                        unit_price = None
+                size_color = item.get("size_color")
+                if size_color is not None and not isinstance(size_color, str):
+                    size_color = str(size_color)
+                cleaned_items.append({
+                    "product_name": product_name.strip(),
+                    "quantity": quantity,
+                    "size_color": size_color,
+                    "unit_price_da": unit_price,
+                })
+        data["order_items"] = cleaned_items
+
+        # Monetary totals: negatives are meaningless, drop them.
+        for price_field in ("subtotal_da", "shipping_fee_da", "total_price_da"):
+            value = data.get(price_field)
+            if value is None:
+                continue
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                data[price_field] = None
+                continue
+            data[price_field] = value if value >= 0 else None
+
+        sanitized = dict(parsed)
+        sanitized["extracted_data"] = data
+
+        reply = sanitized.get("reply_to_customer")
+        if not isinstance(reply, str):
+            sanitized["reply_to_customer"] = "" if reply is None else str(reply)
+
+        return sanitized
+
     def _build_history(self, state: ConversationState) -> str:
         """Build conversation history for context."""
         lines = []
@@ -315,6 +628,7 @@ Be precise and follow all guardrails.
         order_data: Dict[str, Any],
         user_msg: str,
         assistant_msg: str,
+        model_state: Optional[str] = None,
     ):
         """Update conversation state based on extracted data."""
         state.assistant_message_history.append(assistant_msg)
@@ -332,6 +646,12 @@ Be precise and follow all guardrails.
             ):
                 val = order_data.get(field)
                 if val is not None and (not isinstance(val, str) or val.strip()):
+                    if field == "phone_number":
+                        # Never store an invalid phone number: it would make
+                        # the field look collected while failing validation.
+                        val = normalize_algerian_phone(val)
+                        if val is None:
+                            continue
                     state.collected_fields[field] = val
             
             if order_data.get("order_items"):
@@ -369,21 +689,46 @@ Be precise and follow all guardrails.
             state.order_status = OrderStatus.PENDING_CONFIRMATION.value
         
         # Update state machine
+        # Resolution order: hard guardrails first, then a monotonic rule that
+        # never lets the flow regress once an order has started, then the
+        # intent heuristics, then the state reported by the model.
+        intent = self._signals_order_intent(user_msg)
+        has_items = bool(state.product_context.get("order_items"))
         if state.escalated:
             state.state = "ESCALATION"
         elif not state.missing_fields:
             # All fields collected
             state.state = "CONFIRMATION"
-        elif state.state == "CONFIRMATION":
+        elif state.collected_fields:
+            # Once a field is collected we are in data collection, whatever
+            # the model reports: a mid-order question is still an open order.
             state.state = "DATA_COLLECTION"
-        elif "buy" in user_msg.lower() or "nchri" in user_msg.lower() or "acheter" in user_msg.lower() or "3tini" in user_msg.lower():
-            if state.state == "INQUIRY":
-                state.state = "ORDER_INTENT"
-        elif state.state in ["ORDER_INTENT", "INQUIRY"] and len(state.collected_fields) > 0:
+        elif previous_state in {"ORDER_INTENT", "DATA_COLLECTION"}:
+            # The order already started: stay in it, a garbled turn must not
+            # send the customer back to the inquiry state.
+            state.state = previous_state
+        elif previous_state == "CONFIRMATION":
             state.state = "DATA_COLLECTION"
-        elif len(state.collected_fields) > 0 or len(state.missing_fields) < 5:
-            if state.state not in ["CONFIRMATION", "ESCALATION"]:
-                state.state = "DATA_COLLECTION"
+        elif intent:
+            state.state = "ORDER_INTENT"
+        elif model_state == "ORDER_INTENT":
+            state.state = "ORDER_INTENT"
+        elif model_state == "DATA_COLLECTION" and has_items:
+            state.state = "DATA_COLLECTION"
+        else:
+            # Nothing collected, no purchase intent: a product question.
+            state.state = "INQUIRY"
+
+    def _signals_order_intent(self, message: str) -> bool:
+        """
+        Detect an unambiguous purchase intent.
+
+        Only high confidence expressions are listed here: this is the
+        fallback used when the model does not report a state, so a false
+        positive would push a price question into the ordering flow.
+        """
+        text = _strip_accents((message or "").casefold())
+        return any(marker in text for marker in ORDER_INTENT_MARKERS)
     
     def _get_fallback_response(self, language: str) -> str:
         """Get fallback response in appropriate language."""

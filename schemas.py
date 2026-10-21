@@ -3,9 +3,12 @@ Pydantic schemas for CommandIA order extraction.
 Defines the 5 Sacred Fields and full order structure as per PRD/Roadmap.
 """
 from enum import Enum
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator
 import re
+from typing import Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+from wilayas import get_wilaya_name
 
 
 class DeliveryType(str, Enum):
@@ -41,6 +44,23 @@ class OrderExtractionData(BaseModel):
     shipping_fee_da: Optional[float] = Field(default=None, ge=0)
     total_price_da: Optional[float] = Field(default=None, ge=0)
     order_status: OrderStatus = Field(default=OrderStatus.PENDING_CONFIRMATION)
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone_number(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = re.sub(r"[\s().-]", "", value)
+        if not re.fullmatch(r"0[567]\d{8}", normalized):
+            raise ValueError("phone_number must be a valid 10-digit Algerian number")
+        return normalized
+
+    @field_validator("wilaya_code")
+    @classmethod
+    def validate_wilaya_code(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and get_wilaya_name(value) is None:
+            raise ValueError("wilaya_code must identify a supported Algerian wilaya")
+        return value
 
 
 class OrderExtractionResponse(BaseModel):

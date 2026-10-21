@@ -1,7 +1,6 @@
 
 import os
 from ai_service import AIService
-
 def demo():
     
   

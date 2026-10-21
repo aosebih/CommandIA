@@ -1,149 +1,149 @@
-"""
-List of all 58 official Algerian Wilayas.
-Used for validation as per PRD requirements.
-"""
-ALGERIAN_WILAYAS = [
-    "Adrar",
-    "Chlef",
-    "Laghouat",
-    "Oum El Bouaghi",
-    "Batna",
-    "Béjaïa",
-    "Biskra",
-    "Béchar",
-    "Blida",
-    "Bouira",
-    "Tamanrasset",
-    "Tébessa",
-    "Tlemcen",
-    "Tiaret",
-    "Tizi Ouzou",
-    "Alger",
-    "Djelfa",
-    "Jijel",
-    "Sétif",
-    "Saïda",
-    "Skikda",
-    "Sidi Bel Abbès",
-    "Annaba",
-    "Guelma",
-    "Constantine",
-    "Médéa",
-    "Mostaganem",
-    "M'Sila",
-    "Mascara",
-    "Ouargla",
-    "Oran",
-    "El Bayadh",
-    "Illizi",
-    "Bordj Bou Arreridj",
-    "Boumerdès",
-    "El Tarf",
-    "Tindouf",
-    "Tissemsilt",
-    "El Oued",
-    "Khenchela",
-    "Souk Ahras",
-    "Tipaza",
-    "Mila",
-    "Aïn Defla",
-    "Naâma",
-    "Aïn Témouchent",
-    "Ghardaïa",
-    "Relizane",
-    "Timimoun",
-    "Bordj Badji Mokhtar",
-    "Ouled Djellal",
-    "Béni Abbès",
-    "In Salah",
-    "In Guezzam",
-    "Touggourt",
-    "Djanet",
-    "El M'Ghair",
-    "El Meniaa",
-]
+"""Canonical Algerian wilaya names and code helpers."""
 
-# Normalized mapping for case-insensitive matching
-ALGERIAN_WILAYAS_NORMALIZED = {w.lower(): w for w in ALGERIAN_WILAYAS}
+import re
+import unicodedata
+from typing import Optional, Union
 
 
-ALGERIAN_WILAYAS_NORMALIZED.update({
-    "algiers": "Alger",
-    "oran": "Oran",
-    "constantine": "Constantine",
-    "annaba": "Annaba",
-    "setif": "Sétif",
-    "tlemcen": "Tlemcen",
-    "bejaia": "Béjaïa",
-    "jijel": "Jijel",
-    "skikda": "Skikda",
-    "blida": "Blida",
-    "tizi ouzou": "Tizi Ouzou",
-    "boumerdes": "Boumerdès",
-})
+WILAYA_CODE_TO_NAME = {
+    1: "Adrar",
+    2: "Chlef",
+    3: "Laghouat",
+    4: "Oum El Bouaghi",
+    5: "Batna",
+    6: "Béjaïa",
+    7: "Biskra",
+    8: "Béchar",
+    9: "Blida",
+    10: "Bouira",
+    11: "Tamanrasset",
+    12: "Tébessa",
+    13: "Tlemcen",
+    14: "Tiaret",
+    15: "Tizi Ouzou",
+    16: "Alger",
+    17: "Djelfa",
+    18: "Jijel",
+    19: "Sétif",
+    20: "Saïda",
+    21: "Skikda",
+    22: "Sidi Bel Abbès",
+    23: "Annaba",
+    24: "Guelma",
+    25: "Constantine",
+    26: "Médéa",
+    27: "Mostaganem",
+    28: "M'Sila",
+    29: "Mascara",
+    30: "Ouargla",
+    31: "Oran",
+    32: "El Bayadh",
+    33: "Illizi",
+    34: "Bordj Bou Arreridj",
+    35: "Boumerdès",
+    36: "El Tarf",
+    37: "Tindouf",
+    38: "Tissemsilt",
+    39: "El Oued",
+    40: "Khenchela",
+    41: "Souk Ahras",
+    42: "Tipaza",
+    43: "Mila",
+    44: "Aïn Defla",
+    45: "Naâma",
+    46: "Aïn Témouchent",
+    47: "Ghardaïa",
+    48: "Relizane",
+    49: "Timimoun",
+    50: "Bordj Badji Mokhtar",
+    51: "Ouled Djellal",
+    52: "Béni Abbès",
+    53: "In Salah",
+    54: "In Guezzam",
+    55: "Touggourt",
+    56: "Djanet",
+    57: "El M'Ghair",
+    58: "El Meniaa",
+    59: "Aflou",
+    60: "Barika",
+    61: "Ksar Chellala",
+    62: "Messaad",
+    63: "Aïn Oussera",
+    64: "Bou Saâda",
+    65: "El Abiodh Sidi Cheikh",
+    66: "El Kantara",
+    67: "Bir El Ater",
+    68: "Ksar El Boukhari",
+    69: "El Aricha",
+}
 
-# List for schema (exact names)
+ALGERIAN_WILAYAS = list(WILAYA_CODE_TO_NAME.values())
 ALGERIAN_WILAYAS_LIST = ALGERIAN_WILAYAS
 
 
-def is_valid_wilaya(name: str) -> bool:
-    """Check if a wilaya name is valid."""
-    if not name or not isinstance(name, str):
+def _normalize_key(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    without_accents = "".join(
+        character for character in decomposed
+        if not unicodedata.combining(character)
+    )
+    return re.sub(r"[^a-z0-9]+", " ", without_accents).strip()
+
+
+ALGERIAN_WILAYAS_NORMALIZED = {
+    _normalize_key(name): name for name in ALGERIAN_WILAYAS
+}
+ALGERIAN_WILAYAS_NORMALIZED.update(
+    {
+        "algiers": "Alger",
+        "setif": "Sétif",
+        "bejaia": "Béjaïa",
+        "bechar": "Béchar",
+        "saida": "Saïda",
+        "msila": "M'Sila",
+        "ain defla": "Aïn Defla",
+        "ain temouchent": "Aïn Témouchent",
+        "beni abbes": "Béni Abbès",
+        "el mghair": "El M'Ghair",
+        "bou saada": "Bou Saâda",
+    }
+)
+
+
+def get_wilaya_name(code: Union[int, str]) -> Optional[str]:
+    """Return the canonical name for a wilaya code, or None if it is unknown."""
+    try:
+        numeric_code = int(code)
+    except (TypeError, ValueError):
+        return None
+    return WILAYA_CODE_TO_NAME.get(numeric_code)
+
+
+def get_wilaya_code(name: str) -> Optional[int]:
+    """Return the code for a wilaya name or supported alias, or None if unknown."""
+    if not isinstance(name, str) or not name.strip():
+        return None
+    normalized = _normalize_key(name)
+    canonical_name = ALGERIAN_WILAYAS_NORMALIZED.get(normalized)
+    if canonical_name is None:
+        return None
+    return next(
+        code for code, wilaya_name in WILAYA_CODE_TO_NAME.items()
+        if wilaya_name == canonical_name
+    )
+
+
+def is_valid_wilaya(value: Union[str, int]) -> bool:
+    """Check a wilaya name or code against the canonical 69-wilaya list."""
+    if isinstance(value, bool):
         return False
-    return name.lower() in ALGERIAN_WILAYAS_NORMALIZED
+    if isinstance(value, int):
+        return value in WILAYA_CODE_TO_NAME
+    return get_wilaya_code(value) is not None
 
 
 def normalize_wilaya(name: str) -> str:
-    """Normalize wilaya name to canonical form."""
-    if not name:
+    """Return the canonical name for a wilaya name or preserve unknown input."""
+    if not isinstance(name, str):
         return name
-    key = name.lower().strip()
-    return ALGERIAN_WILAYAS_NORMALIZED.get(key, name)
-
-# Wilaya code mapping (1-58 in official order)
-WILAYA_CODE_TO_NAME = {
-    1:  Adrar, 2: Chlef, 3: Laghouat, 4: Oum El Bouaghi, 5: Batna, 6: Bejaia, 7: Biskra, 8: Bechar, 9: Blida,
-    10: Bouira, 11: Tamanrasset, 12: Tebessa, 13: Tlemcen, 14: Tiaret, 15: Tizi Ouzou, 16: Alger, 17: Djelfa,
-    18: Jijel, 19: Setif, 20: Saida, 21: Skikda, 22: Sidi Bel Abbes, 23: Annaba, 24: Guelma, 25: Constantine,
-    26: Medea, 27: Mostaganem, 28: MSila, 29: Mascara, 30: Ouargla, 31: Oran, 32: El Bayadh, 33: Illizi,
- 34: Bordj Bou Arreridj, 35: Boumerdes, 36: El Tarf, 37: Tindouf, 38: Tissemsilt, 39: El Oued, 40: Khenchela,
- 41: Souk Ahras, 42: Tipaza, 43: Mila, 44: Ain Defla, 45: Naama, 46: Ain Temouchent, 47: Ghardaia, 48: Relizane,
- 49: Timimoun, 50: Bordj Badji Mokhtar, 51: Ouled Djellal, 52: Beni Abbes, 53: In Salah, 54: In Guezzam,
- 55: Touggourt, 56: Djanet, 57: El MGhair, 58: El Meniaa,
-}
-def get_wilaya_name(code):
-    if isinstance(code, str):
-        try: code = int(code)
-        except Exception: return 
- return WILAYA_CODE_TO_NAME.get(code, )
-def get_wilaya_code(name):
-    if not name: return 0
-    try: norm = normalize_wilaya(name)
-    except Exception: norm = str(name).lower().strip()
-    for c,n in WILAYA_CODE_TO_NAME.items():
-        if n.lower() == norm.lower(): return c
-    return 0
-
-# Wilaya code mapping (1-58 in official order)
-WILAYA_CODE_TO_NAME = {
-    1:  Adrar, 2: Chlef, 3: Laghouat, 4: Oum El Bouaghi, 5: Batna, 6: Bejaia, 7: Biskra, 8: Bechar, 9: Blida,
-    10: Bouira, 11: Tamanrasset, 12: Tebessa, 13: Tlemcen, 14: Tiaret, 15: Tizi Ouzou, 16: Alger, 17: Djelfa,
-    18: Jijel, 19: Setif, 20: Saida, 21: Skikda, 22: Sidi Bel Abbes, 23: Annaba, 24: Guelma, 25: Constantine,
-    26: Medea, 27: Mostaganem, 28: MSila, 29: Mascara, 30: Ouargla, 31: Oran, 32: El Bayadh, 33: Illizi,
- 34: Bordj Bou Arreridj, 35: Boumerdes, 36: El Tarf, 37: Tindouf, 38: Tissemsilt, 39: El Oued, 40: Khenchela,
- 41: Souk Ahras, 42: Tipaza, 43: Mila, 44: Ain Defla, 45: Naama, 46: Ain Temouchent, 47: Ghardaia, 48: Relizane,
- 49: Timimoun, 50: Bordj Badji Mokhtar, 51: Ouled Djellal, 52: Beni Abbes, 53: In Salah, 54: In Guezzam,
- 55: Touggourt, 56: Djanet, 57: El MGhair, 58: El Meniaa,
-}
-def get_wilaya_name(code):
-    if isinstance(code, str):
-        try: code = int(code)
-        except Exception: return 
- return WILAYA_CODE_TO_NAME.get(code, )
-def get_wilaya_code(name):
-    if not name: return 0
-    try: norm = normalize_wilaya(name)
-    except Exception: norm = str(name).lower().strip()
-    for c,n in WILAYA_CODE_TO_NAME.items():
-        if n.lower() == norm.lower(): return c
-    return 0
+    return ALGERIAN_WILAYAS_NORMALIZED.get(_normalize_key(name), name.strip())

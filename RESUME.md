@@ -101,7 +101,7 @@ Modèles : `OrderItem`, `OrderExtractionData`, `OrderExtractionResponse`, `Order
   "extracted_data": {
     "customer_name": "String or null",
     "phone_number": "String or null",
-    "wilaya_code": "Integer (1-58) or null",
+    "wilaya_code": "Integer (1-69) or null",
     "delivery_type": "HOME|DESK|null",
     "address": "String or null",
     "order_items": [

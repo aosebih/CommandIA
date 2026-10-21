@@ -8,7 +8,7 @@ AI Brain for CommandIA using **Gemini API** with **Pydantic** schema validation.
 - **`ai_service.py`** - Service wrapper for easy integration
 - **`schemas.py`** - Pydantic models for order extraction and validation
 - **`system_prompt.py`** - V1 system prompt with all rules and guardrails
-- **`wilayas.py`** - List of 58 Algerian Wilayas with validation
+- **`wilayas.py`** - Canonical names and code validation for all 69 supported Wilayas
 - **`config.py`** - Configuration management
 - **`test_ai.py`** - Basic test suite
 - **`demo.py`** - Interactive CLI demo
@@ -78,8 +78,9 @@ result = service.process_message(
     }
 )
 
-print(result["response_text"])
-print(result["order_data"])
+print(result["reply_to_customer"])
+print(result["extracted_data"])
+# response_text and order_data remain available as compatibility keys.
 print(result["state"])  # INQUIRY, ORDER_INTENT, DATA_COLLECTION, CONFIRMATION, ESCALATION
 ```
 
@@ -88,7 +89,7 @@ print(result["state"])  # INQUIRY, ORDER_INTENT, DATA_COLLECTION, CONFIRMATION, 
 ### 5 Sacred Fields (PRD 3.2)
 1. **customer_name** - Full name (min 1 first name)
 2. **phone_number** - Algerian format (05/06/07 + 8 digits, 10 total)
-3. **wilaya** - Must match 1 of 58 official Algerian Wilayas
+3. **wilaya_code** - Must identify one of the 69 supported Algerian Wilayas
 4. **delivery_type** - HOME or DESK
 5. **address** - Commune/street details
 
@@ -113,25 +114,34 @@ print(result["state"])  # INQUIRY, ORDER_INTENT, DATA_COLLECTION, CONFIRMATION, 
 - State 3: CONFIRMATION - Summarize and confirm
 - ESCALATION - Flag for human intervention
 
-### JSON Schema
-Exact schema from roadmap enforced:
+### Extraction response
+The AI output is validated against the Pydantic response model:
 ```json
 {
-  "order_id": "uuid-v4",
-  "customer_name": "String",
-  "phone_number": "String (10 Digits: 05/06/07...)",
-  "wilaya": "String (1-58)",
-  "delivery_type": "Enum ('HOME', 'DESK')",
-  "address": "String (Commune / Location Details)",
-  "product_details": {
-    "item_id": "String",
-    "quantity": "Integer",
-    "size_color": "String"
-  },
-  "total_price_da": "Float",
-  "order_status": "Enum ('PENDING_CONFIRMATION', 'CONFIRMED', 'REQUIRES_HUMAN')"
+  "reply_to_customer": "Customer-facing message",
+  "extracted_data": {
+    "customer_name": "String or null",
+    "phone_number": "10-digit Algerian number or null",
+    "wilaya_code": "Integer from 1 to 69 or null",
+    "delivery_type": "HOME, DESK, or null",
+    "address": "String or null",
+    "order_items": [
+      {
+        "product_name": "String",
+        "quantity": "Positive integer",
+        "size_color": "String or null",
+        "unit_price_da": "Non-negative number or null"
+      }
+    ],
+    "subtotal_da": "Non-negative number or null",
+    "shipping_fee_da": "Non-negative number or null",
+    "total_price_da": "Non-negative number or null",
+    "order_status": "PENDING_CONFIRMATION, CONFIRMED, or REQUIRES_HUMAN"
+  }
 }
 ```
+
+The server validates the phone number and wilaya code before updating conversation state. The legacy `response_text` and `order_data` result keys remain available for the current CLI and callers while integrations migrate to the canonical keys.
 
 ## Implementation Notes
 

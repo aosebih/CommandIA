@@ -16,12 +16,14 @@ Ce dépôt contient le **module "AI Brain"** : le cœur IA qui comprend les dial
 | `ai_service.py` | Wrapper de service (gestion multi-conversations) |
 | `schemas.py` | Modèles Pydantic (5 Champs Sacrés + commande complète) |
 | `system_prompt.py` | Prompt système V1 (règles, guardrails, dialectes) |
-| `wilayas.py` | Liste des 58 wilayas algériennes + validation |
-| `wilayas_fixed.py` | Version corrigée (attention : encodage mojibake) |
+| `wilayas.py` | Liste des 69 wilayas algériennes + validation |
 | `config.py` | Chargement des variables d'environnement |
+| `app.py` | Service FastAPI (webhook Meta, `/healthz`, `/chat`) |
+| `order_store.py` | Persistance des commandes vers Supabase (REST) |
 | `demo.py` | Démo interactive en ligne de commande |
-| `test_ai.py` | Suite de tests de base |
-| `requirements.txt` | Dépendances Python |
+| `tests/` | Suite de tests offline (pytest) + jeu de données golden |
+| `Dockerfile` / `.dockerignore` | Image de production (python:3.12-slim) |
+| `requirements.txt` / `requirements-dev.txt` | Dépendances runtime / développement |
 | `.env.example` | Modèle de configuration |
 | `README_AI.md` | Documentation du module IA |
 | `prd.txt` | Product Requirements Document |
@@ -32,13 +34,18 @@ Ce dépôt contient le **module "AI Brain"** : le cœur IA qui comprend les dial
 ## Stack technique
 
 - **Python 3.10+**
-- **Gemini API** (`google-genai` SDK v1.41.0) — modèle `gemini-2.5-flash` par défaut
+- **Gemini API** (`google-genai` SDK v1.41.0) — modèle `gemini-3.5-flash-lite` par défaut,
+  repli `gemini-3.5-flash` (`GEMINI_MODEL_FALLBACKS`), retries avec backoff exponentiel
 - **Pydantic v2** — validation stricte des schémas JSON
-- **FastAPI + Uvicorn** — prévu pour les webhooks Meta
+- **FastAPI + Uvicorn** — webhooks Meta (Instagram/Facebook DMs)
 - **httpx** — client HTTP
 - **python-dotenv** — gestion du `.env`
 
+> ⚠️ `gemini-2.5-flash` renvoie **404** pour les nouvelles clés API
+> (« no longer available to new users »). Ne pas repasser en 2.5-flash.
+
 > Approche : **prompt engineering uniquement**, aucun fine-tuning (conforme au PRD).
+
 
 ---
 
@@ -59,12 +66,17 @@ Le parcours utilisateur est suivi via 5 états pour éviter les boucles infinies
 ### 2. Méthodes principales de `AIBrain`
 
 - `process_message(user_message, conversation_state, product_context)` — Point d'entrée : appelle Gemini, parse la réponse, met à jour l'état, retourne réponse + données extraites.
-- `_detect_language(message)` — Détection de langue par heuristique : comptage des caractères arabes (Darija), motifs franco-arabes (`3`, `7`, `bch`, `kifach`, `rani`…), mots-clés français, sinon anglais.
-- `_update_missing_fields(extracted)` — Calcule les champs manquants et valide téléphone + wilaya.
+- `_generate_content(prompt)` — Appel Gemini avec **repli de modèle** (chain `GEMINI_MODEL` → `GEMINI_MODEL_FALLBACKS`) et **retries/backoff** sur les erreurs transitoires (408/409/429/5xx).
+- `_is_transient(error)` — Distingue une erreur transitoire (retry) d'une erreur de configuration (clé invalide, modèle inconnu).
+- `_detect_language(message)` — Détection de langue : script arabe → Darija, marqueurs franco-arabes → Franco-arabe, puis Français/Anglais. Les chiffres seuls ne sont jamais un signal.
+- `_sanitize_extraction(parsed)` — Rend l'extraction tolérante : un champ invalide (téléphone, wilaya, type de livraison) est mis à `null` au lieu de faire perdre toute la commande.
+- `_update_missing_fields(extracted)` — Calcule les champs manquants et **revalide** téléphone + wilaya à chaque tour.
+- `_signals_order_intent(message)` — Détecte une intention d'achat explicite (repli utilisé quand le modèle ne renvoie pas d'état).
 - `_create_fallback_order(state)` — Construit une commande de secours en cas d'erreur API.
 - `_build_history(state)` — Reconstruit l'historique (5 derniers échanges).
 - `_parse_ai_response(raw)` — Extrait le JSON (blocs markdown ` ```json ` ou JSON brut).
-- `_update_conversation_state(...)` — Met à jour champs collectés, statut, escalade et état.
+- `_update_conversation_state(...)` — Met à jour champs collectés, statut, escalade et état (résolution : guardrails → monotone → heuristiques → état renvoyé par le modèle).
+- `_build_fallback_result(state, error)` — Réponse dégradée en cas d'échec API (toujours avec la clé `language`).
 - `_get_fallback_response(language, error)` — Message d'erreur traduit (FR/EN/Darija/Franco-arabe).
 - `reset_conversation(...)` — Réinitialise une conversation.
 
@@ -87,7 +99,7 @@ Modèles : `OrderItem`, `OrderExtractionData`, `OrderExtractionResponse`, `Order
 |---|-------|---------------------|
 | 1 | `customer_name` | Nom complet (au moins un prénom) |
 | 2 | `phone_number` | Format algérien : 05/06/07 + 8 chiffres = 10 chiffres |
-| 3 | `wilaya` | Doit correspondre à l'une des 58 wilayas officielles |
+| 3 | `wilaya` | Doit correspondre à l'une des 69 wilayas officielles |
 | 4 | `delivery_type` | `HOME` (domicile/ldar) ou `DESK` (stop-desk/bureau) |
 | 5 | `address` | Commune/rue (HOME) ou commune/agence (DESK) |
 
@@ -140,17 +152,27 @@ Modèles : `OrderItem`, `OrderExtractionData`, `OrderExtractionResponse`, `Order
 ### Installation
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-dev.txt   # tests
 ```
 
 ### Configuration
 ```powershell
-$env:GEMINI_API_KEY="votre-cle-api"
+Copy-Item .env.example .env   # puis renseigner GEMINI_API_KEY
 ```
 
 ### Lancement
 ```bash
-python test_ai.py   # tests de base
-python demo.py      # démo interactive
+pytest tests/ -q               # suite offline (aucun appel API)
+uvicorn app:app --port 8000    # service FastAPI
+python demo.py                  # démo interactive
+docker build -t commandia .    # image de production
+docker run --rm -p 8000:8000 --env-file .env commandia
+```
+
+### Tests golden (réseau)
+```bash
+# Reconstruction de la conversation "darija_full_booking" contre l'API réelle
+$env:COMMANDIA_GOLDEN="1"; pytest tests/test_golden_dataset.py -q
 ```
 
 ### Usage programmatique
@@ -169,17 +191,33 @@ print(result["response_text"], result["state"], result["order_data"])
 
 ## Points d'attention / dette technique
 
-1. **`wilayas.py` — erreur de syntaxe** : `WILAYA_CODE_TO_NAME` contient des valeurs non-échappées (ex. `1: Adrar`) → ces lignes sont **invalides en Python**. De plus, le dictionnaire et les fonctions `get_wilaya_name` / `get_wilaya_code` sont **définis deux fois** (lignes 104-125 puis 128-149).
-2. **`wilayas_fixed.py` — encodage cassé** : caractères accentués mal encodés (mojibake `BÃ©jaÃ¯a` au lieu de `Béjaïa`).
-3. **`wilaya_code` vs `wilaya`** : `ai_brain.py` importe `is_valid_wilaya`, `get_wilaya_code`, `get_wilaya_name`, `ALGERIAN_WILAYAS_LIST` — vérifier que les imports ne cassent pas à cause des erreurs du point 1.
-4. **`.gitignore`** n'ignore que `.env.example` (devrait aussi ignorer `.env` et `__pycache__/`).
+Les problèmes bloquants du premier jet ont été corrigés :
+
+1. ~~`wilayas.py` — erreur de syntaxe~~ → corrigé (`WILAYA_CODE_TO_NAME` valide, une seule définition de chaque fonction).
+2. ~~`wilayas_fixed.py` — encodage cassé~~ → fichier supprimé (dead code).
+3. ~~`wilaya_code` vs `wilaya` — imports incohérents~~ → corrigé (`wilaya_code` partout, `get_wilaya_name` / `get_wilaya_code` / `is_valid_wilaya`).
+4. ~~`.gitignore` incomplet~~ → `.env`, `__pycache__/`, `*.py[cod]`, `.pytest_cache/` sont ignorés ; les `.pyc` déjà trackés ont été dé-trackés.
+
+Dette restante (non bloquante) :
+
+- `ai_service.py` garde les conversations en mémoire : le service est **stateless entre les
+  redémarrages**. Passer à un store Redis/Supabase avant la mise en production.
+- La détection d'intention d'achat repose en partie sur une liste de marqueurs ; le prompt
+  demande aussi au modèle de renvoyer `conversation_state`, mais le modèle ne le fait pas
+  toujours de façon fiable.
+- `prd.txt` mentionne OpenAI/Anthropic et « 58 wilayas » : le code utilise Gemini et
+  69 wilayas. Écart à documenter (le PRD n'est pas à jour).
 
 ---
 
 ## Prochaines étapes (intégration)
 
-- Pipeline webhook **FastAPI** (Meta Graph API pour DMs Instagram).
-- Persistance **Supabase** (tables Orders, Merchants, Products, Conversations).
-- Dashboard marchand **Next.js**.
+- ✅ Pipeline webhook **FastAPI** (`app.py`) : `GET /webhook` (challenge Meta),
+  `POST /webhook` (signature HMAC vérifiée, déduplication par `mid`),
+  `GET /healthz`, `POST /chat` (développement, protégé par `COMMANDIA_API_KEY`).
+- ✅ Persistance **Supabase** (`order_store.py`) : écriture de la commande au format
+  canonique `roadmap.txt` (160-174) via l'API REST.
+- ✅ Conteneurisation **Docker** (`python:3.12-slim`, non-root, healthcheck).
+- ⬜ Dashboard marchand **Next.js**.
 
 Voir `prd.txt` et `roadmap.txt` pour les spécifications complètes.

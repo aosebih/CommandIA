@@ -1,6 +1,11 @@
 """
-Test script for CommandIA AI module.
-Tests basic conversation flows with sample messages in different dialects.
+Manual check script for the CommandIA AI module.
+
+It calls the real Gemini API, so it is NOT part of the automated suite.
+The offline test suite lives in tests/ (pytest), and the golden dataset
+runner is tests/test_golden_dataset.py.
+
+Usage: python test_ai.py
 """
 import os
 from ai_service import AIService
@@ -40,8 +45,8 @@ TEST_CASES = [
 ]
 
 
-def test_ai():
-    """Run basic AI tests."""
+def run_manual_tests():
+    """Run basic AI tests against the real API."""
     print("Testing CommandIA AI Module...")
     print("=" * 60)
     
@@ -86,4 +91,4 @@ def test_ai():
 
 
 if __name__ == "__main__":
-    test_ai()
+    run_manual_tests()

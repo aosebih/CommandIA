@@ -10,24 +10,35 @@ AI Brain for CommandIA using **Gemini API** with **Pydantic** schema validation.
 - **`system_prompt.py`** - V1 system prompt with all rules and guardrails
 - **`wilayas.py`** - Canonical names and code validation for all 69 supported Wilayas
 - **`config.py`** - Configuration management
-- **`test_ai.py`** - Basic test suite
+- **`app.py`** - FastAPI service (Meta webhook, `/healthz`, `/chat`)
+- **`order_store.py`** - Supabase persistence for extracted orders
+- **`tests/`** - Offline pytest suite + golden dataset runner
+- **`test_ai.py`** - Manual check script against the real API
 - **`demo.py`** - Interactive CLI demo
 
 ## Requirements
 
 - Python 3.10+
 - Gemini API key
-- Dependencies in `requirements.txt`
+- Dependencies in `requirements.txt` (`requirements-dev.txt` for the tests)
 
 ## Installation
 
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ## Configuration
 
-Set environment variable for Gemini API key:
+Copy the template and fill in the values:
+
+```bash
+cp .env.example .env    # Windows PowerShell: Copy-Item .env.example .env
+```
+
+At minimum `GEMINI_API_KEY` is required. Every other variable is optional and
+disables the related feature while it holds a placeholder value.
 
 **Windows (PowerShell):**
 ```powershell
@@ -44,23 +55,63 @@ set GEMINI_API_KEY=your-api-key-here
 export GEMINI_API_KEY="your-api-key-here"
 ```
 
-Optional: Set model (defaults to `gemini-2.5-flash`)
+### Model selection
+
+The default is `gemini-3.5-flash-lite` (~2s per reply) with
+`gemini-3.5-flash` as fallback.
+
+> `gemini-2.5-flash` returns **404** for newly created API keys
+> ("model is not available to new users"), so it must not be used as the
+> primary model.
+
 ```bash
-export GEMINI_MODEL="gemini-2.5-flash"
+export GEMINI_MODEL="gemini-3.5-flash-lite"
+export GEMINI_MODEL_FALLBACKS="gemini-3.5-flash"
 ```
+
+Transient provider errors (429, 5xx) are retried with an exponential backoff
+(`MAX_RETRIES`, `RETRY_BASE_DELAY`) before the fallback model is tried.
 
 ## Usage
 
 ### Quick Test
 
 ```bash
-python test_ai.py
+pytest tests/ -q                # offline suite, no API call
+python test_ai.py                # manual check against the real API
 ```
 
 ### Interactive Demo
 
 ```bash
 python demo.py
+```
+
+### HTTP Service
+
+```bash
+uvicorn app:app --port 8000
+```
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/healthz` | GET | Liveness probe, public |
+| `/webhook` | GET | Meta verification challenge (`hub.mode`, `hub.verify_token`, `hub.challenge`) |
+| `/webhook` | POST | Meta webhook, HMAC `X-Hub-Signature-256` verified, deduplicated on `message.mid` |
+| `/chat` | POST | Development endpoint, requires the `X-API-Key` header (`COMMANDIA_API_KEY`) |
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key_here" \
+  -d '{"message":"Rani bghit nchri had produit"}'
+```
+
+### Docker
+
+```bash
+docker build -t commandia .
+docker run --rm -p 8000:8000 --env-file .env commandia
 ```
 
 ### Programmatic Usage
@@ -143,6 +194,10 @@ The AI output is validated against the Pydantic response model:
 
 The server validates the phone number and wilaya code before updating conversation state. The legacy `response_text` and `order_data` result keys remain available for the current CLI and callers while integrations migrate to the canonical keys.
 
+A malformed field never discards a whole order: `_sanitize_extraction` drops the
+invalid value (invalid phone, out-of-range wilaya, unknown delivery type) and the
+remaining fields are kept, so the bot simply asks for the missing field again.
+
 ## Implementation Notes
 
 - Uses **Gemini API** (`google-genai` SDK v1.41.0) - **no fine-tuning** as requested
@@ -150,10 +205,33 @@ The server validates the phone number and wilaya code before updating conversati
 - Prompt engineering only approach
 - Structured output with JSON responses
 - Conversation state tracking across turns
-- Phone number validation for Algerian format (regex)
-- Wilaya validation against official list
+- Phone number validation for Algerian format (regex), shared with the state machine
+  so a number is re-validated on every turn
+- Wilaya validation against official list (69 wilayas)
+- Model fallback chain with retry/backoff on transient provider errors
 
-## Testing Example
+## Testing
+
+### Offline suite (no API call)
+
+```bash
+pytest tests/ -q
+```
+
+The suite stubs the Gemini client, so it is deterministic and free. It covers
+the language detection, the state machine, the extraction sanitizer and the
+HTTP service.
+
+### Golden dataset (real API)
+
+```bash
+# Windows PowerShell
+$env:COMMANDIA_GOLDEN="1"; pytest tests/test_golden_dataset.py -q
+```
+
+`tests/golden_dataset.json` holds the reference multi-turn conversations in
+French, Darija and English. It is the regression net for prompt changes and
+model upgrades.
 
 Sample Franco-Arabic conversation:
 1. "Rani bghit nchri had produit" → Detects order intent
@@ -165,9 +243,6 @@ Sample Franco-Arabic conversation:
 
 ## Next Steps
 
-This module is ready to integrate with:
-- FastAPI webhook pipeline (Meta Graph API for Instagram DMs)
-- Supabase for persisting orders
 - Merchant dashboard (Next.js)
 
-See `CommandIA_Roadmap.pdf` and `CommandIA_PRD (1).pdf` for full specs.
+See `prd.txt` and `roadmap.txt` for the full specifications.

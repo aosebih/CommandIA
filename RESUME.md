@@ -162,10 +162,11 @@ Copy-Item .env.example .env   # puis renseigner GEMINI_API_KEY
 
 ### Lancement
 ```bash
-pytest tests/ -q               # suite offline (aucun appel API)
-uvicorn app:app --port 8000    # service FastAPI
-python demo.py                  # démo interactive
-docker build -t commandia .    # image de production
+pytest -q                        # suite offline (aucun appel API, 82 tests)
+uvicorn app:app --port 8000      # service FastAPI
+python demo.py                    # démo interactive
+python test_ai.py                 # 7 messages scriptés contre l'API réelle
+docker build -t commandia .      # image de production
 docker run --rm -p 8000:8000 --env-file .env commandia
 ```
 
@@ -174,6 +175,11 @@ docker run --rm -p 8000:8000 --env-file .env commandia
 # Reconstruction de la conversation "darija_full_booking" contre l'API réelle
 $env:COMMANDIA_GOLDEN="1"; pytest tests/test_golden_dataset.py -q
 ```
+
+Le palier gratuit Gemini autorise **15 requêtes/minute/modèle** et répond
+`429` avec le délai attendu ("Please retry in 15.5s"), délai que la logique de
+retry respecte. Enchaîner le golden dataset et `test_ai.py` sature le quota :
+les lancer séparément.
 
 ### Usage programmatique
 ```python

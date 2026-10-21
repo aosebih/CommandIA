@@ -1,6 +1,15 @@
 
 import os
+import sys
+
 from ai_service import AIService
+
+# The replies are in Arabic/Franco-Arabic: the Windows console defaults to
+# cp1252 and would crash on the first non-ASCII character.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 def demo():
     
   

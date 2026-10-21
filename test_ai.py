@@ -8,39 +8,53 @@ runner is tests/test_golden_dataset.py.
 Usage: python test_ai.py
 """
 import os
+import sys
+
 from ai_service import AIService
+
+# The replies are in Arabic/Franco-Arabic: the Windows console defaults to
+# cp1252 and would crash on the first non-ASCII character.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # Test messages in different dialects
 TEST_CASES = [
     {
         "name": "French inquiry",
         "message": "Bonjour, quel est le prix de ce produit ?",
+        "conversation": "french",
         "context": {"item_id": "shirt_001", "price": 2500, "total_price_da": 2500},
     },
     {
         "name": "Franco-Arabic order intent",
         "message": "Rani bghit nchri had produit",
+        "conversation": "darija",
         "context": {"item_id": "shirt_001", "price": 2500, "total_price_da": 2500},
     },
     {
         "name": "Franco-Arabic name",
         "message": "Ismi Ahmed Benali",
+        "conversation": "darija",
     },
     {
         "name": "Franco-Arabic phone",
         "message": "Numéro ta3i 0550123456",
+        "conversation": "darija",
     },
     {
         "name": "Franco-Arabic wilaya",
         "message": "Ana men Alger",
+        "conversation": "darija",
     },
     {
         "name": "Franco-Arabic delivery",
         "message": "Home delivery, domicile",
+        "conversation": "darija",
     },
     {
         "name": "Franco-Arabic address",
         "message": "Rue Didouche Mourad, Commune Alger Centre",
+        "conversation": "darija",
     },
 ]
 
@@ -59,25 +73,31 @@ def run_manual_tests():
             return
         
         service = AIService()
-        conv_id = None
-        
+        # One conversation per dialect: the mirror rule locks the language on
+        # the first message, so mixing dialects in a single conversation would
+        # always answer in the language of the first one.
+        conversations = {}
+
         # Run test cases
         for i, test in enumerate(TEST_CASES, 1):
             print(f"\n{i}. {test['name']}")
             print(f"   Input: {test['message']}")
-            
+
+            conv_id = conversations.get(test["conversation"])
             result = service.process_message(
                 user_message=test["message"],
                 conversation_id=conv_id,
                 product_context=test.get("context"),
             )
-            conv_id = result["conversation_id"]
-            
+            conversations[test["conversation"]] = result["conversation_id"]
+
             print(f"   Language: {result.get('language')}")
             print(f"   State: {result.get('state')}")
             print(f"   Missing: {result.get('missing_fields')}")
             print(f"   Collected: {len(result.get('collected_fields', {}))} fields")
             print(f"   Response: {result['response_text'][:80]}...")
+            if result.get("error"):
+                print(f"   ❌ Error: {result['error']}")
             if result.get("escalated"):
                 print("   ⚠️  ESCALATED")
             print("-" * 40)

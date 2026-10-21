@@ -77,9 +77,11 @@ Transient provider errors (429, 5xx) are retried with an exponential backoff
 ### Quick Test
 
 ```bash
-pytest tests/ -q                # offline suite, no API call
+pytest -q                        # offline suite, no API call
 python test_ai.py                # manual check against the real API
 ```
+
+See [Testing](#testing) for the four levels and the rate-limit caveat.
 
 ### Interactive Demo
 
@@ -212,17 +214,20 @@ remaining fields are kept, so the bot simply asks for the missing field again.
 
 ## Testing
 
-### Offline suite (no API call)
+Four levels, from the cheapest to the most realistic. Start at the top.
+
+### 1. Offline suite (no API call, no quota)
 
 ```bash
-pytest tests/ -q
+pytest -q
 ```
 
-The suite stubs the Gemini client, so it is deterministic and free. It covers
-the language detection, the state machine, the extraction sanitizer and the
-HTTP service.
+82 tests, ~2s. The Gemini client is stubbed, so it is deterministic and free.
+It covers the language detection, the state machine, the extraction sanitizer,
+the retry/fallback logic and the HTTP service. **This is the loop to use while
+iterating** — it never touches the API.
 
-### Golden dataset (real API)
+### 2. Golden dataset (real API)
 
 ```bash
 # Windows PowerShell
@@ -231,7 +236,7 @@ $env:COMMANDIA_GOLDEN="1"; pytest tests/test_golden_dataset.py -q
 
 `tests/golden_dataset.json` holds the reference multi-turn conversations in
 French, Darija and English. It is the regression net for prompt changes and
-model upgrades.
+model upgrades. Add a case by appending to that file.
 
 Sample Franco-Arabic conversation:
 1. "Rani bghit nchri had produit" → Detects order intent
@@ -240,6 +245,57 @@ Sample Franco-Arabic conversation:
 4. "Alger" → Collects wilaya (validated)
 5. "HOME" → Delivery type
 6. "Rue Didouche, Alger Centre" → Address → Moves to CONFIRMATION
+
+### 3. Manual script and interactive demo (real API)
+
+```bash
+python test_ai.py     # 7 scripted messages, prints language/state/fields/reply
+python demo.py        # interactive chat
+```
+
+`test_ai.py` gives each dialect its **own** conversation: the mirror rule locks
+the language on the first message, so mixing dialects in a single conversation
+would always answer in the language of the first one.
+
+### 4. Over HTTP
+
+```bash
+uvicorn app:app --port 8000
+curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
+     -H "X-API-Key: $COMMANDIA_API_KEY" -d '{"message":"Rani bghit nchri"}'
+```
+
+### Rate limits
+
+The Gemini free tier allows **15 requests per minute per model**, and answers
+`429 RESOURCE_EXHAUSTED` with the delay it expects ("Please retry in 15.5s").
+That delay is honoured by the retry logic, but running the golden dataset and
+`test_ai.py` back to back will still hit the wall: run them separately, with a
+minute between them.
+
+### Testing another model
+
+```bash
+$env:GEMINI_MODEL="gemini-3.5-flash"; $env:GEMINI_MODEL_FALLBACKS=""
+pytest tests/test_golden_dataset.py
+```
+
+The same variables feed the container (`docker run -e GEMINI_MODEL=...`).
+
+### Seeing what the model really returns
+
+When a state or extraction issue is not obvious, print the raw payload the
+model produced:
+
+```python
+from ai_brain import AIBrain
+original = AIBrain._generate_content
+def traced(self, prompt):
+    response = original(self, prompt)
+    print(response.text)
+    return response
+AIBrain._generate_content = traced
+```
 
 ## Next Steps
 

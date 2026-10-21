@@ -16,6 +16,7 @@ from config import (
     GEMINI_MODEL_FALLBACKS,
     MAX_RETRIES,
     RETRY_BASE_DELAY,
+    RETRY_MAX_DELAY,
 )
 from schemas import (
     DeliveryType,
@@ -90,6 +91,21 @@ def _strip_accents(text: str) -> str:
         char for char in unicodedata.normalize("NFD", text)
         if unicodedata.category(char) != "Mn"
     )
+
+
+# The provider tells us how long to wait: "Please retry in 15.56543398s".
+RETRY_DELAY_PATTERN = re.compile(r"retry in\s+([\d.]+)\s*s", re.IGNORECASE)
+
+
+def _suggested_retry_delay(error: Exception) -> Optional[float]:
+    """Extract the retry delay announced by the provider, if any."""
+    match = RETRY_DELAY_PATTERN.search(str(error))
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
 
 
 class ConversationState:
@@ -191,7 +207,7 @@ class AIBrain:
                             error,
                         )
                         break
-                    delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    delay = self._retry_delay(error, attempt)
                     logger.warning(
                         "Gemini call failed (model=%s, attempt=%d/%d, code=%s): %s. "
                         "Retrying in %.1fs",
@@ -589,6 +605,21 @@ Be precise and follow all guardrails.
             sanitized["reply_to_customer"] = "" if reply is None else str(reply)
 
         return sanitized
+
+    def _retry_delay(self, error: Exception, attempt: int) -> float:
+        """
+        How long to wait before the next attempt.
+
+        The exponential backoff is the baseline, but the provider knows better
+        than we do: the Gemini free tier answers 429 with the delay it
+        expects ("Please retry in 15.5s"), and retrying earlier only burns
+        the remaining attempts.
+        """
+        delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+        suggested = _suggested_retry_delay(error)
+        if suggested is not None:
+            delay = max(delay, suggested)
+        return min(delay, RETRY_MAX_DELAY)
 
     def _build_history(self, state: ConversationState) -> str:
         """Build conversation history for context."""

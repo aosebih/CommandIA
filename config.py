@@ -42,6 +42,10 @@ GEMINI_MODEL_FALLBACKS = [
 # Conversation settings
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "2.0"))
+# Upper bound for a single wait. The Gemini free tier answers 429 with the
+# delay it expects ("Please retry in 15.5s"), and that delay is used when it
+# is longer than the exponential backoff.
+RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60"))
 CONFIRMATION_THRESHOLD = 5  # 5 sacred fields
 
 # Allowed languages/dialects as per PRD

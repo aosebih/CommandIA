@@ -47,13 +47,18 @@ def demo():
             )
             conv_id = result["conversation_id"]
             
-            print(f"AI: {result['response_text']}")
+            print(f"AI: {result.get('response_text', '')}")
             print(f"[State: {result['state']}, Collected: {len(result['collected_fields'])}/5, Missing: {result['missing_fields']}]")
             if result.get('escalated'):
                 print("[ESCALATED - Human handoff required]")
             print()
             
         except KeyboardInterrupt:
+            break
+        except EOFError:
+            # stdin is closed (no TTY, e.g. inside a container): leave the loop
+            # instead of spinning on the same error forever.
+            print()
             break
         except Exception as e:
             print(f"Error: {e}\n")

@@ -310,6 +310,9 @@ def chat(payload: ChatRequest, x_api_key: Optional[str] = Header(default=None, a
     )
     return {
         "reply_to_customer": result.get("reply_to_customer"),
+        # Legacy alias, kept so an HTTP client sees the same keys as a
+        # programmatic caller of AIService.process_message.
+        "response_text": result.get("response_text"),
         "language": result.get("language"),
         "state": result.get("state"),
         "missing_fields": result.get("missing_fields"),

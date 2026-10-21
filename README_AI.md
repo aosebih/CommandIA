@@ -109,6 +109,11 @@ curl -X POST http://localhost:8000/chat \
   -d '{"message":"Rani bghit nchri had produit"}'
 ```
 
+`/chat` returns the same keys as `AIService.process_message`:
+`reply_to_customer` (and its legacy alias `response_text`), `language`,
+`state`, `missing_fields`, `collected_fields`, `extracted_data`, `order_data`,
+`conversation_id` and `error`.
+
 ### Docker
 
 ```bash

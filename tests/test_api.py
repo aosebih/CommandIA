@@ -202,6 +202,7 @@ def test_chat_returns_result(client, monkeypatch):
         def process_message(self, user_message, conversation_id=None, product_context=None):
             return {
                 "reply_to_customer": "Salam!",
+                "response_text": "Salam!",
                 "language": "franco_arabic",
                 "state": "ORDER_INTENT",
                 "missing_fields": ["customer_name"],
@@ -218,5 +219,8 @@ def test_chat_returns_result(client, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["reply_to_customer"] == "Salam!"
+    # The HTTP contract mirrors the programmatic one: the legacy alias is
+    # still there.
+    assert body["response_text"] == "Salam!"
     assert body["language"] == "franco_arabic"
     assert body["error"] is None

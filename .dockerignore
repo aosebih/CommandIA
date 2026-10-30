@@ -1,0 +1,42 @@
+# Secrets: never bake them into the image
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+.github
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Tests and local tooling
+tests/
+pytest.ini
+requirements-dev.txt
+
+# Documents
+*.pdf
+*.md
+!README.md
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml

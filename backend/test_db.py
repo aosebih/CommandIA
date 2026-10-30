@@ -1,18 +1,16 @@
+"""Read merchants through the REST API using credentials from .env."""
 import os
+
 from dotenv import load_dotenv
-from supabase import create_client, Client
+
+from backend.supabase_client import SupabaseRest
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SECURE_KEY")
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
+if not url or not key or url.startswith("your_"):
+    raise SystemExit("Set SUPABASE_URL and SUPABASE_KEY in .env")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-def test_connection():
-    # Fetch merchants from database
-    response = supabase.table("merchants").select("*").execute()
-    print("Connection Successful! Merchants in DB:", response.data)
-
-if __name__ == "__main__":
-    test_connection()
+client = SupabaseRest(url, key)
+print("Merchants:", client.get("merchants", {"select": "*"}))

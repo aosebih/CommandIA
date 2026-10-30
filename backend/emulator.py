@@ -1,45 +1,63 @@
-import requests
-import time
+"""
+Signed Instagram webhook emulator.
+
+Hits the canonical FastAPI app (backend.app), not backend.main.
+Usage:
+    uvicorn backend.app:app --port 8000
+    python -m backend.emulator
+"""
+import hashlib
+import hmac
 import json
+import os
+import time
 
-# Your local FastAPI webhook endpoint
-WEBHOOK_URL = "http://127.0.0.1:8000/webhook"
+import requests
+from dotenv import find_dotenv, load_dotenv
 
-# A realistic Instagram DM webhook payload
-# We are using a Darija/Franco-Arabic test message for the Golden Dataset
+load_dotenv(find_dotenv())
+
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "http://127.0.0.1:8000/webhook")
+META_APP_SECRET = os.getenv("META_APP_SECRET", "")
+
 payload = {
     "object": "instagram",
     "entry": [
         {
-            "id": "123456789_BROWNIES_MAHELMA_ID", # Your Instagram Business Account ID
+            "id": os.getenv("META_PAGE_ID", "123456789_BROWNIES_MAHELMA_ID"),
             "time": int(time.time()),
             "messaging": [
                 {
-                    "sender": {
-                        "id": "987654321_CUSTOMER_ID" # The customer's scoped ID
-                    },
+                    "sender": {"id": "987654321_CUSTOMER_ID"},
                     "recipient": {
-                        "id": "123456789_BROWNIES_MAHELMA_ID"
+                        "id": os.getenv("META_PAGE_ID", "123456789_BROWNIES_MAHELMA_ID")
                     },
-                    "timestamp": int(time.time()),
+                    "timestamp": int(time.time() * 1000),
                     "message": {
-                        "mid": "m_wZ2...", # Unique message ID
-                        "text": "Salam, nhab ncomandi 2 boites de brownies classiques l Alger centre, home delivery. Mon num c'est 0555123456"
-                    }
+                        "mid": f"m_emulator_{int(time.time())}",
+                        "text": (
+                            "Salam, nhab ncomandi 2 boites de brownies classiques "
+                            "l Alger centre, home delivery. Mon num c'est 0555123456"
+                        ),
+                    },
                 }
-            ]
+            ],
         }
-    ]
+    ],
 }
 
-print(f"🚀 Sending simulated Instagram DM to {WEBHOOK_URL}...")
+raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+headers = {"Content-Type": "application/json"}
+if META_APP_SECRET and not META_APP_SECRET.startswith("your_"):
+    digest = hmac.new(META_APP_SECRET.encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    headers["X-Hub-Signature-256"] = f"sha256={digest}"
+else:
+    print("META_APP_SECRET is not configured; the real webhook will reject this request.")
 
+print(f"Sending signed Instagram DM to {WEBHOOK_URL}...")
 try:
-    # Send the POST request to your FastAPI server
-    response = requests.post(WEBHOOK_URL, json=payload)
-    
-    print(f"✅ Status Code: {response.status_code}")
-    print(f"📥 Server Response: {response.text}")
-    
+    response = requests.post(WEBHOOK_URL, data=raw, headers=headers, timeout=15)
+    print(f"Status: {response.status_code}")
+    print(f"Body: {response.text}")
 except requests.exceptions.ConnectionError:
-    print("❌ Connection Error: Is your FastAPI server running? (Run: uvicorn main:app --reload)")
+    print("Connection error: start the API with `uvicorn backend.app:app --port 8000`")

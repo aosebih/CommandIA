@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "description": "Golden multi-turn cases. Run with COMMANDIA_GOLDEN=1 pytest tests/test_golden_dataset.py",
+  "cases": [
+    {
+      "id": "darija_intro_no_data",
+      "language": "franco_arabic",
+      "turns": [
+        {
+          "message": "Rani bghit nchri had produit",
+          "expected": {
+            "state": "ORDER_INTENT",
+            "language": "franco_arabic",
+            "missing_fields": ["customer_name", "phone_number", "wilaya_code", "delivery_type", "address"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "french_price_question",
+      "language": "french",
+      "turns": [
+        {
+          "message": "Bonjour, quel est le prix de cette chemise ?",
+          "expected": {
+            "state": "INQUIRY",
+            "language": "french",
+            "missing_fields": ["customer_name", "phone_number", "wilaya_code", "delivery_type", "address"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "darija_name_and_phone",
+      "language": "franco_arabic",
+      "turns": [
+        {
+          "message": "Rani bghit nchri had produit",
+          "expected": { "state": "ORDER_INTENT", "language": "franco_arabic" }
+        },
+        {
+          "message": "Ismi Ahmed Benali",
+          "expected": {
+            "state": "DATA_COLLECTION",
+            "collected_fields": { "customer_name": "Ahmed Benali" }
+          }
+        },
+        {
+          "message": "Numero ta3i 0550123456",
+          "expected": {
+            "state": "DATA_COLLECTION",
+            "collected_fields": { "phone_number": "0550123456" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "franco_arabic_wilaya_alger",
+      "language": "franco_arabic",
+      "turns": [
+        {
+          "message": "Rani bghit nchri",
+          "expected": { "state": "ORDER_INTENT" }
+        },
+        {
+          "message": "Ana men Alger",
+          "expected": {
+            "state": "DATA_COLLECTION",
+            "collected_fields": { "wilaya_code": 16 }
+          }
+        }
+      ]
+    },
+    {
+      "id": "english_greeting",
+      "language": "english",
+      "turns": [
+        {
+          "message": "Hello, I want to order a product",
+          "expected": { "state": "ORDER_INTENT", "language": "english" }
+        }
+      ]
+    },
+    {
+      "id": "darija_full_booking",
+      "language": "franco_arabic",
+      "turns": [
+        {
+          "message": "Rani bghit nchri had produit",
+          "expected": { "state": "ORDER_INTENT" }
+        },
+        {
+          "message": "Ismi Ahmed Benali",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "customer_name": "Ahmed Benali" } }
+        },
+        {
+          "message": "0550123456",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "phone_number": "0550123456" } }
+        },
+        {
+          "message": "Ana men Alger",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "wilaya_code": 16 } }
+        },
+        {
+          "message": "Home delivery",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "delivery_type": "HOME" } }
+        },
+        {
+          "message": "Rue Didouche Mourad, Alger Centre",
+          "expected": { "state": "CONFIRMATION", "collected_fields": { "address": "Rue Didouche Mourad, Alger Centre" } }
+        },
+        {
+          "message": "Oui je confirme",
+          "expected": { "state": "CONFIRMATION", "order_status": "CONFIRMED" }
+        }
+      ]
+    },
+    {
+      "id": "french_full_booking",
+      "language": "french",
+      "turns": [
+        {
+          "message": "Bonjour, je souhaite commander un article",
+          "expected": { "state": "ORDER_INTENT" }
+        },
+        {
+          "message": "Mon nom est Ahmed Benali",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "customer_name": "Ahmed Benali" } }
+        },
+        {
+          "message": "Mon numéro est 0550123456",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "phone_number": "0550123456" } }
+        },
+        {
+          "message": "Je suis à Oran",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "wilaya_code": 31 } }
+        },
+        {
+          "message": "Livraison à domicile",
+          "expected": { "state": "DATA_COLLECTION", "collected_fields": { "delivery_type": "HOME" } }
+        },
+        {
+          "message": "12 rue des Frères Bouadou, Oran",
+          "expected": { "state": "CONFIRMATION" }
+        }
+      ]
+    },
+    {
+      "id": "haggle_refused",
+      "language": "franco_arabic",
+      "turns": [
+        {
+          "message": "Nqassli chwiya 3afak?",
+          "expected": { "state": "INQUIRY", "language": "franco_arabic" }
+        }
+      ]
+    },
+    {
+      "id": "bad_phone_stays_in_collection",
+      "language": "french",
+      "turns": [
+        {
+          "message": "Je veux commander",
+          "expected": { "state": "ORDER_INTENT" }
+        },
+        {
+          "message": "Mon numéro est 1234",
+          "expected": { "state": "ORDER_INTENT" }
+        }
+      ]
+    },
+    {
+      "id": "desk_delivery_oran",
+      "language": "french",
+      "turns": [
+        {
+          "message": "Je souhaite commander",
+          "expected": { "state": "ORDER_INTENT" }
+        },
+        {
+          "message": "Livraison stop desk à Oran",
+          "expected": {
+            "collected_fields": { "delivery_type": "DESK", "wilaya_code": 31 }
+          }
+        }
+      ]
+    },
+    {
+      "id": "darija_arabic_script_greeting",
+      "language": "darija",
+      "turns": [
+        {
+          "message": "السلام، راني حاب نشري",
+          "expected": { "language": "darija" }
+        }
+      ]
+    }
+  ]
+}

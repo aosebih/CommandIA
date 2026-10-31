@@ -1,0 +1,1661 @@
+% =============================================================================
+% CommandIA - Repository and Branch Architecture
+% Copy this file into Overleaf as main.tex and compile with pdfLaTeX.
+% The document is self-contained: only packages shipped with Overleaf are used.
+% =============================================================================
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usepackage{float}
+\usepackage{caption}
+
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+
+\definecolor{commandia}{RGB}{20,80,140}
+\definecolor{codebg}{RGB}{246,246,246}
+\definecolor{codeframe}{RGB}{210,210,210}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=commandia,
+  urlcolor=commandia,
+  pdftitle={CommandIA Repository and Branch Architecture},
+  pdfauthor={CommandIA project}
+}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  frame=single,
+  rulecolor=\color{codeframe},
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+  captionpos=b,
+  extendedchars=true,
+  inputencoding=utf8
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{CommandIA}
+\rhead{Repository and Branch Architecture}
+\cfoot{\thepage}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\renewcommand{\arraystretch}{1.15}
+
+\titleformat{\section}{\Large\bfseries\color{commandia}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\color{commandia}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+
+\DeclareRobustCommand{\code}[1]{\texttt{#1}}
+
+\begin{document}
+
+% =============================================================================
+\begin{titlepage}
+  \centering
+  \vspace*{2.5cm}
+
+  {\Huge\bfseries CommandIA\par}
+  \vspace{0.6cm}
+  {\LARGE Repository and Branch Architecture\par}
+  \vspace{0.4cm}
+  {\large Conversation AI and order extraction for Algerian e-commerce\par}
+
+  \vspace{2.5cm}
+
+  \begin{tabular}{ll}
+    \toprule
+    Item & Value \\
+    \midrule
+    Project & CommandIA (ThirdUni project) \\
+    Repository & Git repository inspected from the local clone \\
+    Current branch & \code{main} \\
+    Branches inspected & \code{main}, \code{ai\_model\_part}, \code{feat/meta-webhook}, \\
+                       & \code{initial-backend}, \code{origin/feat/metaWebhook}, \\
+                       & \code{origin/main} \\
+    Documentation date & 30 October 2026 \\
+    Main stack & Python, FastAPI, Google Gemini, Pydantic, Supabase, Docker \\
+    \bottomrule
+  \end{tabular}
+
+  \vfill
+
+  {\small This document describes the architecture of every branch and the\\
+  integration branch, as observed in the repository and its Git history.}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Purpose and Scope}
+
+This document is an architectural description of the CommandIA repository and
+of its branches. It was produced by inspecting the Git history, the file trees
+of all local and remote branches, and the source files themselves.
+
+The document covers:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item the branch topology and how the branches relate to each other;
+  \item the logical and physical architecture of the \code{main} branch;
+  \item each runtime component, its responsibilities and its interfaces;
+  \item the conversation state machine, the data contracts and the database
+        schema;
+  \item the test architecture and the deployment architecture;
+  \item the architecture of each feature, initial and AI branch;
+  \item the observed architectural risks and the remaining technical debt.
+\end{itemize}
+
+It is not an installation manual. The operational commands are grouped in
+Appendix B for convenience.
+
+% =============================================================================
+\section{Executive Summary}
+
+CommandIA is a conversational engine for Algerian e-commerce. It receives
+customer messages from Instagram or Facebook direct messages, answers product
+questions in Algerian Darija, Franco-Arabic, French or English, guides the
+customer through an order, extracts the five required delivery fields, and
+writes a structured order to Supabase.
+
+The repository has evolved through two largely independent work streams:
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item an \textbf{AI stream}, carried by \code{ai\_model\_part} and then by
+        the local \code{main} branch, which contains the Gemini-based AI Brain,
+        the Pydantic contracts, the state machine, the FastAPI service, the
+        Supabase writer, the offline test suite and the Docker image;
+  \item a \textbf{backend and webhook stream}, carried by
+        \code{initial-backend}, \code{feat/meta-webhook} and
+        \code{origin/feat/metaWebhook}, which contains the first FastAPI
+        application, the PostgreSQL schema, the local Meta webhook emulator and
+        a direct Supabase insertion pipeline.
+\end{enumerate}
+
+The local \code{main} branch is the current integration branch. It contains
+both the AI module and the legacy backend application, plus the Docker and
+Compose configuration. The remote \code{origin/main} branch does not yet
+contain the AI module. The \code{ai\_model\_part} branch is an AI-only line
+based on the AI tip; it adds a database-contract test and a schema aligned with
+the canonical order contract.
+
+The most important architectural divergence is the database contract:
+\code{order\_store.py} writes the canonical columns
+(\code{order\_id}, \code{wilaya}, \code{product\_details},
+\code{order\_status}), while the SQL schema on \code{main} still uses
+\code{id}, \code{wilaya\_code}, \code{wilaya\_name} and \code{status}. The
+\code{ai\_model\_part} branch corrects the schema, but its contract test
+references a symbol that is not yet defined on that branch.
+
+% =============================================================================
+\section{Repository Topology and Branch Model}
+
+\subsection{Branches Observed}
+
+Table~\ref{tab:branches} lists all branches found in the repository, including
+remote-tracking branches.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+Branch & Tip commit & Role and observed content \\
+\midrule
+\code{main} & \code{f9c49bb} & Current local HEAD. Integration branch with the
+  AI Brain, the FastAPI service \code{app.py}, the Supabase writer, the offline
+  test suite, the legacy \code{backend/} application, Docker and Compose. \\
+\code{origin/main} & \code{b160a29} & Remote integration snapshot. Contains the
+  backend webhook application and the database schema, but not the AI module. \\
+\code{ai\_model\_part} & \code{8a85199} & AI-only line based on \code{eaa6242}.
+  Adds \code{tests/test\_schema\_contract.py} and a canonical SQL schema with
+  the \code{order\_id} primary key, \code{product\_details} and
+  \code{status} column naming fixed. \\
+\code{feat/meta-webhook} & \code{56fac82} & Local pointer to the initial
+  FastAPI setup and Supabase schema. Same commit as
+  \code{initial-backend}. \\
+\code{initial-backend} & \code{56fac82} & First backend milestone: a minimal
+  FastAPI application, the SQL schema, SQL test scripts and the database test
+  helper. \\
+\code{origin/feat/metaWebhook} & \code{5f497e7} & Backend webhook milestone:
+  full \code{backend/main.py} webhook handler, a local Instagram DM emulator,
+  Meta subscription helper and direct Supabase order insertion. \\
+\bottomrule
+\end{tabularx}
+\caption{Branches observed in the repository.}
+\label{tab:branches}
+\end{table}
+
+\subsection{Observed Commit Graph}
+
+The relevant part of the history is the following. It shows that
+\code{main} and \code{ai\_model\_part} share the AI tip
+\code{eaa6242}, while the backend branches share the initial backend commit
+\code{56fac82}.
+
+\begin{verbatim}
+* f9c49bb (HEAD -> main) 30 october
+* 003ea43 Merge remote-tracking branch 'origin/main'
+|\
+| * b160a29 (origin/main, origin/HEAD) Merge branch 'main' of .../CommandIA
+| |\
+| * | 5f497e7 (origin/feat/metaWebhook) chore: clean up old root files
+| * | 716a6ae feat: complete local webhook emulator and supabase pipeline
+| * | 56fac82 (origin/initial-backend, initial-backend, feat/meta-webhook)
+| | |          initial fastAPI setup and Supabase schema
+| | * 8a85199 (origin/ai_model_part, ai_model_part) idk
+| |/
+| * eaa6242 feat(service): return the legacy response_text alias on POST /chat
+| * 418144f fix(ai): honor the provider retry delay
+| * a8652f4 test(ai): add the offline suite and the golden dataset
+| * 57d1950 feat(service): add the FastAPI webhook service and Supabase writer
+| * 5d1b2f3 chore(repo): stop tracking bytecode and restore the env template
+| * df35ce2 fix(ai): use a working Gemini model and stop losing orders
+| * 6360d2f last version ai branch
+| * e5a225a addina rouina
+| * 54dfe2a first ai commit
+| * b82c6a1 feat(ai): implement Gemini API-based AI brain
+|/
+* dea7fff / cb7c787 Initial commit
+\end{verbatim}
+
+\subsection{Branch Relationship Summary}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item The merge base of \code{main} and \code{ai\_model\_part} is
+        \code{eaa6242}, the latest AI commit before the schema-contract work.
+  \item The merge base of \code{main} and the backend branches is
+        \code{56fac82}, the initial FastAPI and Supabase commit.
+  \item \code{main} is ahead of \code{origin/main}: the local branch contains
+        the AI module, the AI test suite, the documentation and the Docker
+        image, while the remote branch stops at the backend webhook snapshot.
+  \item \code{feat/meta-webhook} and \code{initial-backend} point to the same
+        commit, so they represent the same architectural state despite the
+        different names.
+  \item \code{origin/feat/metaWebhook} is two commits ahead of
+        \code{initial-backend}: it adds the concrete webhook handler and the
+        emulator.
+\end{itemize}
+
+\subsection{Feature Matrix by Branch}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l *{5}{c}@{}}
+\toprule
+Capability & \code{main} & \code{ai} & \code{meta} & \code{init} & \code{remote} \\
+\midrule
+Gemini AI Brain & Yes & Yes & No & No & No \\
+Pydantic extraction contracts & Yes & Yes & No & No & No \\
+FastAPI \code{app.py} service & Yes & Yes & No & No & No \\
+Meta webhook HMAC verification & Yes & Yes & No & No & No \\
+Legacy \code{backend/main.py} webhook & Yes & No & Yes & No & Yes \\
+Supabase REST order writer & Yes & Yes & No & No & No \\
+Direct \code{supabase-py} insertion & Yes & No & Yes & No & Yes \\
+PostgreSQL schema & Yes & Yes & Yes & Yes & Yes \\
+Schema contract test & No & Yes & No & No & No \\
+Offline pytest suite & Yes & Yes & No & No & No \\
+Dockerfile & Yes & Yes & No & No & No \\
+Docker Compose & Yes & No & No & No & No \\
+Local webhook emulator & Yes & No & Yes & No & Yes \\
+\bottomrule
+\end{tabularx}
+\caption{Capabilities present on each branch. ``Yes'' means the file or feature
+was observed in the branch tree. Headers: \code{ai} is
+\code{ai\_model\_part}, \code{meta} is \code{origin/feat/metaWebhook},
+\code{init} is \code{initial-backend} and \code{remote} is
+\code{origin/main}.}
+\label{tab:matrix}
+\end{table}
+
+% =============================================================================
+\section{Main Branch: Logical Architecture}
+
+\subsection{Architectural Style}
+
+The \code{main} branch is a \textbf{modular layered monolith}:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item a presentation and integration layer implemented by FastAPI
+        (\code{app.py}) and by the command-line tools;
+  \item a service layer implemented by \code{ai\_service.py}, which owns the
+        in-memory conversation registry;
+  \item a domain and AI layer implemented by \code{ai\_brain.py}, the system
+        prompt, the Pydantic schemas and the wilaya registry;
+  \item an integration layer for external services: the Gemini API and the
+        Supabase REST API;
+  \item a deployment layer implemented by the Dockerfile and Compose file.
+\end{itemize}
+
+Conversations are held in a Python dictionary inside the process. The HTTP
+service is therefore stateless with respect to persistence, but conversation
+state is process-local and is lost when the container restarts.
+
+\subsection{Component Diagram}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=7mm and 12mm,
+  box/.style={draw, rounded corners, align=center, minimum height=9mm,
+              minimum width=31mm, font=\small},
+  ext/.style={box, fill=blue!6},
+  core/.style={box, fill=green!7},
+  data/.style={box, fill=orange!10},
+  arr/.style={-{Latex[length=2mm]}, thick}
+]
+\node[ext] (clients) {Meta Graph API\\HTTP client\\CLI demo};
+\node[ext, below=of clients] (edge) {FastAPI \code{app.py}\\REST and webhook};
+\node[core, below=of edge] (service) {\code{AIService}\\conversation registry};
+\node[core, below=of service] (brain) {\code{AIBrain}\\prompt and state machine};
+\node[core, left=of brain] (assets) {System prompt\\Pydantic schemas\\Wilaya registry};
+\node[ext, right=of service] (gemini) {Gemini API};
+\node[data, right=of brain] (store) {\code{OrderStore}};
+\node[data, right=of store] (supabase) {Supabase\\PostgreSQL};
+
+\draw[arr] (clients) -- (edge);
+\draw[arr] (edge) -- (service);
+\draw[arr] (service) -- (brain);
+\draw[arr] (brain) -- (assets);
+\draw[arr] (brain) -- (gemini);
+\draw[arr] (service) -- (store);
+\draw[arr] (store) -- (supabase);
+\end{tikzpicture}
+\caption{Logical component view of the \code{main} branch.}
+\label{fig:components}
+\end{figure}
+
+\subsection{Layer Responsibilities}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+Layer & Responsibility \\
+\midrule
+External clients & Instagram and Facebook DMs through the Meta Graph API;
+  HTTP clients calling \code{/chat}; the interactive CLI and the manual test
+  scripts. \\
+HTTP edge & \code{app.py}: request validation, API-key enforcement, Meta
+  signature verification, message deduplication, background processing and
+  liveness reporting. \\
+Service & \code{ai\_service.py}: creates, stores, resets and deletes
+  conversation states, and delegates each turn to the AI Brain. \\
+AI domain & \code{ai\_brain.py}: language detection, prompt construction,
+  Gemini calls, retry and fallback, sanitization, validation, state-machine
+  transitions, escalation and degraded responses. \\
+Contracts & \code{schemas.py}, \code{system\_prompt.py} and
+  \code{wilayas.py}: the five required fields, the JSON response shape, the
+  business rules and the Algerian wilaya reference data. \\
+Persistence & \code{order\_store.py}: writes the canonical order payload to
+  Supabase through PostgREST. Disabled automatically when credentials are
+  placeholders. \\
+Configuration & \code{config.py}: loads \code{.env}, validates whether a value
+  is a real credential, and exposes Gemini, Meta, Supabase and service
+  settings. \\
+Deployment & \code{Dockerfile}, \code{docker-compose.yml},
+  \code{.dockerignore}: runtime image, healthcheck and local multi-service
+  topology. \\
+\bottomrule
+\end{tabularx}
+\caption{Layer responsibilities on the \code{main} branch.}
+\end{table}
+
+\subsection{File Tree of the Main Branch}
+
+The following tree groups the tracked files by purpose. The
+\code{\_\_pycache\_\_} file shown in the Git tree is tracked bytecode and is
+listed as technical debt later.
+
+\begin{verbatim}
+CommandIA/
+|-- ai_brain.py
+|-- ai_service.py
+|-- app.py
+|-- config.py
+|-- demo.py
+|-- order_store.py
+|-- schemas.py
+|-- system_prompt.py
+|-- test_ai.py
+|-- wilayas.py
+|
+|-- backend/
+|   |-- .gitignore
+|   |-- emulator.py
+|   |-- force_link.py
+|   |-- main.py
+|   |-- prompt.md
+|   |-- requirements.txt
+|   |-- schema.sql
+|   `-- test_db.py
+|
+|-- tests/
+|   |-- conftest.py
+|   |-- golden_dataset.json
+|   |-- test_api.py
+|   |-- test_golden_dataset.py
+|   |-- test_language.py
+|   |-- test_order_store.py
+|   |-- test_retry.py
+|   |-- test_schemas.py
+|   |-- test_state_machine.py
+|   `-- test_wilayas.py
+|
+|-- Dockerfile
+|-- docker-compose.yml
+|-- .dockerignore
+|-- .env.example
+|-- .gitignore
+|-- pytest.ini
+|-- requirements.txt
+|-- requirements-dev.txt
+|-- README.md
+|-- README_AI.md
+|-- RESUME.md
+|-- prd.txt
+`-- roadmap.txt
+\end{verbatim}
+
+\subsection{Module Inventory}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+File & Responsibility \\
+\midrule
+\code{ai\_brain.py} & Core AI engine. Contains \code{ConversationState},
+  \code{AIBrain}, language detection, prompt assembly, Gemini call with
+  retries and model fallback, response parsing, extraction sanitization,
+  state updates, escalation and fallback responses. \\
+\code{ai\_service.py} & Service facade. Keeps a dictionary of active
+  conversations and exposes \code{process\_message},
+  \code{get\_conversation\_state}, \code{reset\_conversation} and
+  \code{delete\_conversation}. \\
+\code{app.py} & FastAPI application. Routes \code{/}, \code{/healthz},
+  \code{GET /webhook}, \code{POST /webhook} and \code{POST /chat}. Contains
+  Meta signature verification, message deduplication, Graph API reply sending
+  and background task dispatch. \\
+\code{config.py} & Environment loading and configuration. Defines the Gemini
+  model chain, retry settings, Meta credentials, Supabase credentials, service
+  host and port, and the \code{is\_configured} placeholder detector. \\
+\code{order\_store.py} & Supabase persistence through the REST API. Builds the
+  canonical row from \code{ORDER\_COLUMNS}, posts it to
+  \code{/rest/v1/<table>} and never breaks the conversation on write failure. \\
+\code{schemas.py} & Pydantic models and enums for delivery type, order status,
+  order item, extraction data, extraction response and complete order. Also
+  contains the Algerian phone normalizer. \\
+\code{system\_prompt.py} & Version 1 system prompt: identity, four-language
+  rules, mirror rule, guardrails, five sacred fields, state machine and JSON
+  output instructions. \\
+\code{wilayas.py} & Canonical mapping of 69 wilaya codes to names, alias
+  normalization, code lookup, name validation and normalized wilaya helpers. \\
+\code{demo.py} & Interactive command-line conversation against the real Gemini
+  API. Supports reset and quit, and prints the state and collected fields. \\
+\code{test\_ai.py} & Manual, non-automated script that sends seven scripted
+  messages to the real API, one conversation per dialect. \\
+\code{backend/main.py} & Legacy backend application. Direct Meta webhook
+  handler using the \code{supabase-py} client, a mock-order fallback, inventory
+  lookup, root route, health route, webhook routes and \code{/chat}. \\
+\code{backend/emulator.py} & Sends a realistic Instagram DM webhook payload to
+  the local service, used to test the pipeline without Meta. \\
+\code{backend/force\_link.py} & Calls the Meta Graph API
+  \code{subscribed\_apps} endpoint to subscribe the application to the
+  \code{messages} field. \\
+\code{backend/test\_db.py} & Small Supabase connectivity check that reads the
+  merchants table. \\
+\code{backend/schema.sql} & PostgreSQL schema with enum types and the
+  merchants, products, conversations, messages, shipping rates, orders and
+  order items tables, plus the updated-at trigger. \\
+\code{backend/prompt.md} & Earlier Markdown version of the system prompt, kept
+  in the legacy backend directory. \\
+\code{backend/requirements.txt} & Minimal backend dependencies:
+  \code{fastapi}, \code{uvicorn}, \code{supabase} and
+  \code{python-dotenv}. \\
+\code{tests/} & Offline pytest suite plus the opt-in golden dataset runner. \\
+\code{Dockerfile} & Container image, environment variables, exposed port,
+  healthcheck and Uvicorn command. \\
+\code{docker-compose.yml} & Two services sharing one image: the AI service on
+  port 8000 and the legacy backend on port 8001. \\
+\code{pytest.ini} & Test discovery configuration and warning filters. \\
+\code{requirements.txt} & Runtime dependencies with pinned versions. \\
+\code{requirements-dev.txt} & Development dependencies: pytest and httpx. \\
+\code{prd.txt} & Product requirements document. \\
+\code{roadmap.txt} & Four-week execution roadmap and data contract. \\
+\code{README.md}, \code{README\_AI.md}, \code{RESUME.md} & Project, AI module
+  and repository documentation. \\
+\bottomrule
+\end{tabularx}
+\caption{Module inventory of the \code{main} branch.}
+\end{table}
+
+% =============================================================================
+\section{Runtime Components and Interfaces}
+
+\subsection{Configuration}
+
+All runtime configuration is loaded from the \code{.env} file by
+\code{config.py}. The helper \code{is\_configured} rejects empty values and
+placeholder values of the form \code{your\_...\_here}, so optional features are
+disabled instead of being called with fake credentials.
+
+\begin{longtable}{@{}p{0.30\linewidth} p{0.18\linewidth} p{0.44\linewidth}@{}}
+\caption{Environment variables used on the \code{main} branch.}\\
+\toprule
+Variable & Default & Purpose \\
+\midrule
+\endhead
+\code{GEMINI\_API\_KEY} & none & Gemini credential. Required to construct the
+  AI Brain. \\
+\code{GEMINI\_MODEL} & \code{gemini-3.5-flash-lite} & Primary generation
+  model. \\
+\code{GEMINI\_MODEL\_FALLBACKS} & \code{gemini-3.5-flash} & Comma-separated
+  fallback chain tried when the primary model fails with a transient error. \\
+\code{MAX\_RETRIES} & \code{3} & Maximum attempts per model for transient
+  errors. \\
+\code{RETRY\_BASE\_DELAY} & \code{2.0} & Base delay of the exponential
+  backoff, in seconds. \\
+\code{RETRY\_MAX\_DELAY} & \code{60} & Upper bound for a single wait. \\
+\code{META\_VERIFY\_TOKEN} & none & Expected token for the Meta webhook
+  verification challenge. \\
+\code{META\_APP\_SECRET} & none & Secret used to verify the
+  \code{X-Hub-Signature-256} header. \\
+\code{META\_ACCESS\_TOKEN} & none & Page access token used to send replies
+  through the Graph API. \\
+\code{META\_PAGE\_ID} & none & Optional page identifier used when replying as a
+  Facebook Page. \\
+\code{META\_GRAPH\_API\_VERSION} & \code{v21.0} & Graph API version segment in
+  the reply URL. \\
+\code{SUPABASE\_URL} & none & Supabase project URL. \\
+\code{SUPABASE\_KEY} & none & Supabase API key, sent both as \code{apikey} and
+  as a bearer token. \\
+\code{SUPABASE\_ORDERS\_TABLE} & \code{orders} & Target table for persistence. \\
+\code{COMMANDIA\_API\_KEY} & none & Shared secret for the development
+  \code{/chat} endpoint. When absent, the endpoint is disabled. \\
+\code{HOST} & \code{0.0.0.0} & Uvicorn bind address. \\
+\code{PORT} & \code{8000} & Uvicorn bind port. \\
+\code{DEBUG} & \code{false} & Debug flag. \\
+\bottomrule
+\end{longtable}
+
+\subsection{HTTP API}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+Route & Method & Behaviour and protection \\
+\midrule
+\code{/} & GET & Returns the service name, the documentation path and the
+  health path. \\
+\code{/healthz} & GET & Public liveness and readiness report. Returns
+  \code{ok} when the AI service can be built, otherwise \code{degraded}. It
+  also reports Supabase, Meta and \code{/chat} configuration status. \\
+\code{/webhook} & GET & Meta verification challenge. Reads
+  \code{hub.mode}, \code{hub.verify\_token} and \code{hub.challenge} from the
+  raw query string, compares the token with \code{hmac.compare\_digest} and
+  returns the challenge. \\
+\code{/webhook} & POST & Meta notification endpoint. Verifies the
+  \code{X-Hub-Signature-256} HMAC, rejects invalid JSON, deduplicates messages
+  by \code{mid}, answers immediately and processes the messages in FastAPI
+  background tasks. \\
+\code{/chat} & POST & Development endpoint protected by the \code{X-API-Key}
+  header. Accepts \code{message}, an optional \code{conversation\_id} and an
+  optional \code{product\_context}, and returns the full AI result. \\
+\bottomrule
+\end{tabularx}
+\caption{HTTP interface of \code{app.py}.}
+\end{table}
+
+\subsection{Webhook Processing}
+
+The Meta webhook is designed around the twenty-second Meta timeout:
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item The raw request body is read and the \code{X-Hub-Signature-256}
+        header is checked with HMAC-SHA-256 against \code{META\_APP\_SECRET}.
+        A missing secret causes a 503, an invalid signature a 403.
+  \item The JSON body is parsed and flattened with \code{\_extract\_messages}.
+        Entries without text and echo messages are ignored.
+  \item Every message identifier is registered with \code{\_remember\_message}.
+        The registry is a set plus an ordered list capped at 2000 identifiers,
+        so a Meta retry does not answer twice while memory stays bounded.
+  \item Each fresh message is scheduled as a FastAPI background task and the
+        endpoint immediately returns \code{\{"status": "ok", "received": n\}}.
+  \item \code{\_handle\_incoming\_message} calls the AI service, optionally
+        saves an order with \code{OrderStore}, and sends the reply through the
+        Graph API.
+\end{enumerate}
+
+\subsection{AI Service}
+
+\code{AIService} is a thin orchestration layer around \code{AIBrain}. Its
+state is a dictionary \code{\_conversations} mapping a conversation identifier
+to a \code{ConversationState}. The main methods are:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{process\_message(user\_message, conversation\_id, product\_context)}:
+        retrieves or creates the state, delegates to the brain, stores the
+        updated state and returns the result;
+  \item \code{get\_conversation\_state(conversation\_id)}: returns the current
+        state, collected fields, missing fields, escalation flag, attempts and
+        language;
+  \item \code{reset\_conversation(conversation\_id)}: replaces the state with a
+        fresh one;
+  \item \code{delete\_conversation(conversation\_id)}: removes the state.
+\end{itemize}
+
+Because the registry is a plain dictionary, the service is not safe for
+multi-process horizontal scaling without an external store.
+
+\subsection{AI Brain Pipeline}
+
+For every user message, \code{AIBrain.process\_message} executes the following
+pipeline:
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item create or reuse a \code{ConversationState};
+  \item merge the optional product context into the state;
+  \item detect the language and lock it on the first turn;
+  \item increment the attempt counter and build the history of the last five
+        exchanges;
+  \item assemble the full prompt from the system prompt, the current state,
+        the collected and missing fields, the product context, the history and
+        the latest message;
+  \item call Gemini through \code{\_generate\_content};
+  \item parse the JSON response, accepting an optional Markdown code fence;
+  \item sanitize the extraction so one malformed field does not discard the
+        whole order;
+  \item validate the result with the Pydantic \code{OrderExtractionResponse};
+  \item update the conversation state, the missing fields, the escalation
+        status and the order status;
+  \item build and return the canonical extraction plus the legacy
+        compatibility keys.
+\end{enumerate}
+
+On a provider or validation error, the pipeline does not raise into the
+webhook. It builds a degraded result with a localized fallback reply and an
+\code{error} field.
+
+\subsection{Gemini Client, Retries and Model Fallback}
+
+The Gemini call is configured with:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{temperature = 0.3}, \code{top\_p = 0.95},
+        \code{top\_k = 40} and \code{max\_output\_tokens = 2048};
+  \item \code{response\_mime\_type = application/json} and the
+        \code{OrderExtractionResponse} response schema, so the provider is
+        asked for structured output.
+\end{itemize}
+
+The model chain is the primary model followed by
+\code{GEMINI\_MODEL\_FALLBACKS}, deduplicated while preserving order.
+Transient errors are retried; configuration and authentication errors are not.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+Rule & Behaviour \\
+\midrule
+Transient status codes & 408, 409, 429 and all 5xx responses are retried. \\
+Permanent errors & 400, 401, 403 and 404 are not retried; the next model in
+  the chain is tried instead. \\
+Backoff & Exponential: \code{RETRY\_BASE\_DELAY} multiplied by
+  \(2^{attempt-1}\). \\
+Provider hint & If the provider message contains ``retry in N s'', the wait is
+  the larger of the exponential delay and the provider delay. \\
+Cap & Every wait is capped at \code{RETRY\_MAX\_DELAY}. \\
+Exhaustion & When all models and attempts fail, the last error is raised to
+  the brain, which returns a fallback result. \\
+\bottomrule
+\end{tabularx}
+\caption{Retry and model-fallback policy.}
+\end{table}
+
+\subsection{Language Detection and Mirror Rule}
+
+\code{\_detect\_language} uses deterministic heuristics, not an API call:
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item if more than thirty percent of the characters are in the Arabic
+        Unicode ranges, the message is \code{darija};
+  \item Franco-Arabic phrases, digit-letter markers such as
+        \code{3andkom} or \code{9ndek}, and a marker lexicon identify
+        \code{franco\_arabic};
+  \item French marker words identify \code{french};
+  \item English marker words and phrases identify \code{english};
+  \item the default is \code{french}, except for an empty message, which
+        defaults to \code{franco\_arabic}.
+\end{enumerate}
+
+The PRD mirror rule is implemented by storing \code{initial\_language} on the
+first turn and reusing it for every later turn. Digits alone are never a
+language signal, so a French sentence containing a price remains French.
+
+\subsection{Extraction Sanitization}
+
+The model can return a slightly malformed field. \code{\_sanitize\_extraction}
+normalizes before strict validation:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item phone numbers are normalized; invalid numbers become \code{None};
+  \item wilaya codes are converted to integers and kept only when they map to
+        a known wilaya;
+  \item delivery types are uppercased and kept only when they are
+        \code{HOME} or \code{DESK};
+  \item unknown order statuses fall back to \code{PENDING\_CONFIRMATION};
+  \item malformed order items are dropped; quantities are coerced to at least
+        one; negative prices become \code{None};
+  \item negative totals become \code{None}; a non-string reply is coerced.
+\end{itemize}
+
+This design prevents the most damaging failure mode: losing a complete order
+because a single field was malformed.
+
+\subsection{Pydantic Contracts}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+Model or enum & Fields and rules \\
+\midrule
+\code{DeliveryType} & \code{HOME} or \code{DESK}. \\
+\code{OrderStatus} & \code{PENDING\_CONFIRMATION}, \code{CONFIRMED} or
+  \code{REQUIRES\_HUMAN}. \\
+\code{OrderItem} & \code{product\_name}, \code{quantity} at least one,
+  optional \code{size\_color}, optional non-negative \code{unit\_price\_da}. \\
+\code{OrderExtractionData} & The five sacred fields, a list of order items,
+  subtotal, shipping fee, total price and order status. The phone and wilaya
+  validators run on this model. \\
+\code{OrderExtractionResponse} & \code{reply\_to\_customer} plus the
+  \code{extracted\_data} object. This is the provider response schema. \\
+\code{Order} & Complete order with \code{order\_id}, the five fields, the item
+  list, the totals and the status. Used for the complete-order contract. \\
+\bottomrule
+\end{tabularx}
+\caption{Pydantic models and enums.}
+\end{table}
+
+The phone normalizer accepts the formats customers actually type:
+\code{0550123456}, \code{0550 12 34 56}, \code{+213 550 12 34 56},
+\code{00213 550 12 34 56} and dashed forms. It removes non-digits, strips the
+international prefixes, adds a leading zero to a nine-digit mobile number, and
+then requires a ten-digit number starting with 05, 06 or 07.
+
+\subsection{Wilaya Registry}
+
+\code{wilayas.py} defines \code{WILAYA\_CODE\_TO\_NAME} for codes 1 to 69 and
+provides:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{get\_wilaya\_name(code)}: code to canonical name;
+  \item \code{get\_wilaya\_code(name)}: name or alias to code;
+  \item \code{is\_valid\_wilaya(value)}: name or code validation;
+  \item \code{normalize\_wilaya(name)}: accent-insensitive canonicalization;
+  \item alias handling for spellings such as \code{algiers}, \code{setif} and
+        \code{msila}.
+\end{itemize}
+
+The PRD mentions 58 wilayas, while the implementation uses 69 codes. This is a
+documentation and specification gap, not a code defect.
+
+\subsection{System Prompt and Business Guardrails}
+
+\code{system\_prompt.py} contains the V1 prompt. It defines:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item the assistant identity and the commercial objective;
+  \item the four supported languages and the mirror rule;
+  \item the five sacred fields and their validation rules;
+  \item the conversational state machine;
+  \item the JSON output shape;
+  \item the guardrails: no unauthorized discount, haggle defense, dynamic
+        shipping, focus on the sale and human handoff.
+\end{itemize}
+
+The prompt is assembled at runtime with the current state, the collected and
+missing fields, the product context, the history and the latest user message.
+
+\subsection{Order Persistence}
+
+\code{OrderStore} writes through the Supabase REST API, so the runtime has a
+single HTTP dependency, \code{httpx}, and no database driver. The canonical
+columns are:
+
+\begin{lstlisting}[language=Python]
+ORDER_COLUMNS = (
+    "order_id",
+    "customer_name",
+    "phone_number",
+    "wilaya",
+    "delivery_type",
+    "address",
+    "product_details",
+    "total_price_da",
+    "order_status",
+)
+\end{lstlisting}
+
+The writer posts to \code{<SUPABASE\_URL>/rest/v1/<table>} with the
+\code{apikey} header, a bearer token, a JSON content type and
+\code{Prefer: return=minimal}. It returns \code{False} on any HTTP or network
+error and only logs the failure, so persistence never blocks the customer
+reply. The feature is disabled when the URL or the key is empty or still a
+placeholder.
+
+\subsection{Command-Line and Manual Tools}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{demo.py}: interactive chat, product context for a hoodie, reset
+        and quit commands, UTF-8 console output;
+  \item \code{test\_ai.py}: seven scripted messages against the real API,
+        grouped into separate conversations per dialect because of the mirror
+        rule;
+  \item \code{backend/emulator.py}: posts a realistic Instagram DM payload to
+        the local webhook;
+  \item \code{backend/force\_link.py}: subscribes the Meta application to the
+        \code{messages} webhook field;
+  \item \code{backend/test\_db.py}: reads the merchants table to verify the
+        Supabase connection.
+\end{itemize}
+
+% =============================================================================
+\section{End-to-End Flows}
+
+\subsection{Instagram or Facebook DM Flow}
+
+\begin{lstlisting}[caption={Main branch DM flow}]
+Meta customer
+  -> Instagram or Facebook DM
+  -> Meta Graph API webhook POST /webhook
+  -> app.py verifies X-Hub-Signature-256
+  -> app.py deduplicates message.mid
+  -> app.py returns 200 immediately
+  -> background task _handle_incoming_message
+  -> AIService.process_message
+  -> AIBrain detects language and builds prompt
+  -> Gemini returns structured JSON
+  -> sanitize, Pydantic validation, state update
+  -> optional OrderStore.save_order to Supabase
+  -> Graph API POST /me/messages sends the reply
+  -> Meta delivers the reply to the customer
+\end{lstlisting}
+
+\subsection{Development Chat Flow}
+
+\begin{lstlisting}[caption={Main branch /chat flow}]
+HTTP client
+  -> POST /chat with X-API-Key
+  -> app.py checks COMMANDIA_API_KEY
+  -> AIService.process_message
+  -> AIBrain and Gemini
+  -> JSON response with reply, language, state,
+     missing fields, collected fields, extracted data,
+     order data and conversation id
+\end{lstlisting}
+
+\subsection{Legacy Backend Webhook Flow}
+
+The legacy \code{backend/main.py} implements a simpler and less protected
+path:
+
+\begin{lstlisting}[caption={Legacy backend flow}]
+Meta webhook POST /webhook
+  -> parse payload object == "instagram"
+  -> extract sender id and message text
+  -> AIService.process_message
+  -> optional OrderStore.save_order
+  -> on AI error: create_mock_order in Supabase
+  -> return {"status": "success"}
+\end{lstlisting}
+
+This path does not verify the Meta signature and does not deduplicate message
+identifiers. It also falls back to inserting a mock order when the AI fails,
+which is useful for a demo but dangerous in production.
+
+\subsection{Error and Degraded Flow}
+
+When Gemini fails permanently or the response cannot be validated,
+\code{AIBrain} returns a degraded result instead of raising:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item a localized fallback message in French, English, Darija or
+        Franco-Arabic;
+  \item an order extracted from the fields already collected;
+  \item \code{REQUIRES\_HUMAN} when the conversation is escalated, otherwise
+        \code{PENDING\_CONFIRMATION};
+  \item an \code{error} field describing the provider or validation problem.
+\end{itemize}
+
+% =============================================================================
+\section{Conversation State Machine and Business Rules}
+
+\subsection{States}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+State & Name & Behaviour \\
+\midrule
+0 & \code{INQUIRY} & The customer asks about price, size, colour or
+  availability. The assistant answers and may offer to take an order. \\
+1 & \code{ORDER\_INTENT} & The customer signals a purchase intention. Data
+  collection starts. \\
+2 & \code{DATA\_COLLECTION} & The assistant asks for the missing sacred fields,
+  one at a time. \\
+3 & \code{CONFIRMATION} & All five fields are valid. The assistant summarizes
+  the order and asks for explicit confirmation. \\
+-- & \code{ESCALATION} & Human handoff because of frustration, a bulk-pricing
+  request or three failed data-collection attempts. \\
+\bottomrule
+\end{tabularx}
+\caption{Conversation states.}
+\end{table}
+
+\subsection{Transition Logic}
+
+The transition is deliberately conservative. The resolution order in
+\code{\_update\_conversation\_state} is:
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item if the state is escalated, move to \code{ESCALATION};
+  \item if there are no missing fields, move to \code{CONFIRMATION};
+  \item if at least one field has been collected, move to
+        \code{DATA\_COLLECTION};
+  \item if the previous state was \code{ORDER\_INTENT} or
+        \code{DATA\_COLLECTION}, stay in that state; a garbled turn must not
+        send an open order back to inquiry;
+  \item if the previous state was \code{CONFIRMATION}, move to
+        \code{DATA\_COLLECTION} so a correction can be collected;
+  \item if a purchase-intent marker is present, move to
+        \code{ORDER\_INTENT};
+  \item if the model reports \code{ORDER\_INTENT}, move to
+        \code{ORDER\_INTENT};
+  \item if the model reports \code{DATA\_COLLECTION} and items exist, move to
+        \code{DATA\_COLLECTION};
+  \item otherwise, move to \code{INQUIRY}.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=20mm and 28mm,
+  state/.style={draw, rounded corners, align=center, minimum height=10mm,
+                minimum width=30mm, font=\small, fill=green!6},
+  bad/.style={state, fill=red!8},
+  arr/.style={-{Latex[length=2mm]}, thick}
+]
+\node[state] (inquiry) {INQUIRY};
+\node[state, right=of inquiry] (intent) {ORDER INTENT};
+\node[state, right=of intent] (data) {DATA COLLECTION};
+\node[state, right=of data] (confirm) {CONFIRMATION};
+\node[bad, below=of data] (escalation) {ESCALATION};
+
+\draw[arr] (inquiry) -- node[above, font=\scriptsize]{buy} (intent);
+\draw[arr] (intent) -- node[above, font=\scriptsize]{collect} (data);
+\draw[arr] (data) edge[loop above] node[font=\scriptsize]{missing} (data);
+\draw[arr] (data) -- node[above, font=\scriptsize]{5 valid} (confirm);
+\draw[arr] (confirm) .. controls +(0,-1.1) and +(0,-1.1) ..
+  node[below, font=\scriptsize]{correction} (data);
+\draw[arr] (data) -- node[right, font=\scriptsize]{3 failures} (escalation);
+\end{tikzpicture}
+\caption{Conversation state machine. Purchase intent starts the flow; three
+failed data-collection attempts or a human-handoff signal end it in
+escalation.}
+\label{fig:state}
+\end{figure}
+
+\subsection{The Five Sacred Fields}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}c l X@{}}
+\toprule
+Number & Field & Validation rule \\
+\midrule
+1 & \code{customer\_name} & Contains at least a first name. \\
+2 & \code{phone\_number} & Algerian mobile: ten digits starting with 05, 06 or
+  07. International and spaced forms are normalized first. \\
+3 & \code{wilaya\_code} & Identifies one of the 69 supported wilayas. \\
+4 & \code{delivery\_type} & \code{HOME} for home delivery or \code{DESK} for
+  stop-desk, relay point or office delivery. \\
+5 & \code{address} & Commune, street or clear location for home delivery; the
+  commune or agency for desk delivery. \\
+\bottomrule
+\end{tabularx}
+\caption{The five sacred fields.}
+\end{table}
+
+\subsection{Pricing Rule}
+
+The prompt and the state machine use the following rule:
+
+\[
+  \text{subtotal} = \sum_{i} \left(\text{unit price}_{i} \times
+  \text{quantity}_{i}\right)
+\]
+\[
+  \text{total} = \text{subtotal} + \text{shipping fee}
+\]
+
+The shipping fee is applied once per order, based on the wilaya and the
+delivery type; it is never multiplied by the number of items.
+
+\subsection{Confirmation and Escalation Guardrails}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item The model may claim \code{CONFIRMED}, but the service only accepts it
+        when all five fields are valid and the user message contains an
+        explicit confirmation marker such as \code{yes}, \code{confirm},
+        \code{oui}, \code{d'accord} or \code{n3am}.
+  \item A model-provided \code{REQUIRES\_HUMAN} sets the escalation flag.
+  \item Three failed data-collection attempts without a new valid field also
+        escalate.
+  \item Once escalated, the state remains \code{ESCALATION} and the order
+        status remains \code{REQUIRES\_HUMAN}.
+  \item The price guardrails forbid unauthorized discounts and require a
+        polite refusal of haggling.
+\end{itemize}
+
+% =============================================================================
+\section{Data Architecture}
+
+\subsection{Canonical JSON Contract}
+
+The canonical extraction returned by the AI Brain follows this shape:
+
+\begin{lstlisting}[caption={Canonical extraction response}]
+{
+  "reply_to_customer": "Customer-facing message",
+  "extracted_data": {
+    "customer_name": "String or null",
+    "phone_number": "Ten-digit Algerian number or null",
+    "wilaya_code": "Integer from 1 to 69 or null",
+    "delivery_type": "HOME or DESK or null",
+    "address": "String or null",
+    "order_items": [
+      {
+        "product_name": "String",
+        "quantity": "Positive integer",
+        "size_color": "String or null",
+        "unit_price_da": "Non-negative number or null"
+      }
+    ],
+    "subtotal_da": "Non-negative number or null",
+    "shipping_fee_da": "Non-negative number or null",
+    "total_price_da": "Non-negative number or null",
+    "order_status": "PENDING_CONFIRMATION, CONFIRMED or REQUIRES_HUMAN"
+  }
+}
+\end{lstlisting}
+
+\subsection{Legacy Order Shape}
+
+For compatibility with the earlier modules, the AI Brain also returns an
+\code{order\_data} object in the roadmap contract:
+
+\begin{lstlisting}[caption={Legacy order_data shape}]
+{
+  "order_id": "uuid-v4",
+  "customer_name": "String",
+  "phone_number": "String",
+  "wilaya": "String",
+  "delivery_type": "HOME or DESK",
+  "address": "String",
+  "product_details": {
+    "item_id": "String",
+    "quantity": "Integer",
+    "size_color": "String"
+  },
+  "total_price_da": "Float",
+  "order_status": "PENDING_CONFIRMATION, CONFIRMED or REQUIRES_HUMAN"
+}
+\end{lstlisting}
+
+The function \code{\_to\_legacy\_order} maps the first extracted item to
+\code{product\_details}, resolves the wilaya name, supplies defaults and
+generates a UUID.
+
+\subsection{Database Schema on the Main Branch}
+
+The legacy \code{backend/schema.sql} defines three enum types and seven
+tables:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{delivery\_option}: \code{HOME}, \code{DESK};
+  \item \code{order\_status}: \code{PENDING\_CONFIRMATION}, \code{CONFIRMED},
+        \code{REQUIRES\_HUMAN}, \code{CANCELLED};
+  \item \code{conversation\_state}: \code{INQUIRY}, \code{ORDER\_INTENT},
+        \code{DATA\_COLLECTION}, \code{CONFIRMATION}, \code{COMPLETED},
+        \code{ESCALATED};
+  \item \code{merchants}: store name, Meta page id, access token and
+        desk-delivery flag;
+  \item \code{products}: merchant, name, price and stock quantity;
+  \item \code{conversations}: merchant, customer Instagram id, current state,
+        bot-active flag and last message time;
+  \item \code{messages}: conversation, sender type, text and raw payload;
+  \item \code{shipping\_rates}: merchant, wilaya code, home fee and desk fee;
+  \item \code{orders}: the five fields, totals, status and timestamps;
+  \item \code{order\_items}: order, product, extracted product name, quantity,
+        unit price and JSON attributes;
+  \item \code{update\_modified\_column()}: trigger function that updates the
+        order timestamp.
+\end{itemize}
+
+The relationships are: a merchant owns products, conversations, shipping rates
+and orders; a conversation owns messages and may own orders; an order owns
+order items; an order item may reference a catalog product.
+
+\subsection{Schema Drift on the Main Branch}
+
+The main branch contains an important inconsistency between the writer and the
+SQL schema:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l l l@{}}
+\toprule
+Concept & \code{order\_store.py} column & \code{backend/schema.sql} on main \\
+\midrule
+Primary key & \code{order\_id} & \code{id} \\
+Order status & \code{order\_status} & \code{status} \\
+Wilaya & \code{wilaya} & \code{wilaya\_name} plus \code{wilaya\_code} \\
+Product details & \code{product\_details} JSONB & Not present \\
+Conversation enum & \code{ESCALATION} written by the service & \code{ESCALATED} \\
+\bottomrule
+\end{tabularx}
+\caption{Divergence between the AI writer and the main SQL schema.}
+\end{table}
+
+As a consequence, a real Supabase insert of the canonical row against the main
+schema would be rejected by PostgREST. Persistence works only when Supabase is
+disabled. The \code{ai\_model\_part} branch fixes the schema but does not yet
+complete the writer-side contract.
+
+\subsection{Schema on the AI Model Branch}
+
+\code{ai\_model\_part} updates \code{backend/schema.sql} to:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item use \code{order\_id UUID} as the primary key of \code{orders};
+  \item replace \code{wilaya\_name} with the canonical \code{wilaya} text
+        column and keep \code{wilaya\_code} for the range check;
+  \item add \code{product\_details JSONB};
+  \item rename \code{status} to \code{order\_status};
+  \item change the conversation enum value from \code{ESCALATED} to
+        \code{ESCALATION};
+  \item make \code{order\_items} reference \code{orders(order\_id)};
+  \item add \code{backend/test.sql} and \code{backend/test2.sql} to exercise
+        valid and invalid inserts.
+\end{itemize}
+
+The branch also adds \code{tests/test\_schema\_contract.py}, which parses the
+SQL file and asserts that every column written by \code{order\_store.py}
+exists, that no unwritten column is \code{NOT NULL}, that the foreign key
+points at \code{orders(order\_id)}, that the wilaya range is enforced on the
+code, and that the enums accept the values written by the service.
+
+However, the contract test imports \code{DERIVED\_COLUMNS} from
+\code{order\_store}, and that symbol is not defined in the
+\code{ai\_model\_part} version of \code{order\_store.py}. The test therefore
+fails at import time until the writer is updated. This is the main incomplete
+integration point of that branch.
+
+% =============================================================================
+\section{Test Architecture}
+
+\subsection{Offline Suite}
+
+The normal test suite is fully offline. \code{tests/conftest.py} inserts the
+repository root into \code{sys.path}, loads the real \code{.env} when present,
+falls back to a dummy Gemini key and replaces the Gemini client with a
+deterministic stub:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{StubResponse} wraps a text payload;
+  \item \code{StubModels} returns queued JSON payloads and records the calls;
+  \item \code{StubClient} exposes the stub models;
+  \item \code{make\_brain} builds an \code{AIBrain} by hand, bypassing the real
+        constructor;
+  \item \code{make\_service} builds an \code{AIService} around the stub brain;
+  \item \code{extraction\_payload} builds a Gemini-shaped extraction object.
+\end{itemize}
+
+\subsection{Test Files}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+Test file & Coverage \\
+\midrule
+\code{tests/test\_api.py} & Health route, webhook verification success and
+  failure, invalid and missing signature, message processing, deduplication,
+  echo and empty messages, \code{/chat} authentication and response contract. \\
+\code{tests/test\_state\_machine.py} & Invalid phone does not discard other
+  fields, phone normalization, invalid wilaya and delivery type handling, full
+  booking to confirmation, explicit confirmation requirement, escalation after
+  three failures, reply presence, inquiry remains inquiry, purchase intent in
+  all languages, no regression to inquiry. \\
+\code{tests/test\_language.py} & Detection of French, Franco-Arabic, English and
+  Arabic script; empty-message default; mirror-rule locking. \\
+\code{tests/test\_retry.py} & Provider delay extraction, exponential backoff,
+  provider delay priority, cap, fallback model use and no retry for permanent
+  errors. \\
+\code{tests/test\_schemas.py} & Phone normalization valid and invalid cases,
+  Pydantic phone validation, wilaya range validation. \\
+\code{tests/test\_order\_store.py} & Disabled store with placeholders, canonical
+  contract POST, HTTP error and network error survival. \\
+\code{tests/test\_wilayas.py} & 69 entries, Alger is code 16, known and unknown
+  codes. \\
+\code{tests/test\_golden\_dataset.py} & Opt-in multi-turn regression against the
+  real API, enabled only when \code{COMMANDIA\_GOLDEN=1}. \\
+\code{tests/golden\_dataset.json} & Reference conversations in French, Darija,
+  Franco-Arabic and English with expected state, language, missing fields,
+  collected fields and order status. \\
+\bottomrule
+\end{tabularx}
+\caption{Test inventory on the main branch.}
+\end{table}
+
+The documentation reports 82 offline tests. The suite is designed to run in
+about two seconds without API quota.
+
+\subsection{Test Levels}
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item Offline pytest suite: no API call, deterministic, used while iterating.
+  \item Golden dataset: real API, opt-in, used as a regression net for prompt
+        and model changes.
+  \item Manual scripts: \code{test\_ai.py} and \code{demo.py}, real API, not
+        part of automation.
+  \item HTTP tests: run Uvicorn and call \code{/chat} with the development API
+        key.
+\end{enumerate}
+
+\subsection{Rate-Limit Constraint}
+
+The Gemini free tier allows roughly fifteen requests per minute per model and
+returns HTTP 429 with a provider-suggested delay. The retry logic respects that
+delay, but running the golden dataset and the manual script back to back can
+still exhaust the quota. They must be run separately.
+
+% =============================================================================
+\section{Deployment Architecture}
+
+\subsection{Container Image}
+
+The \code{main} Dockerfile performs the following steps:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item start from \code{ai-base-env:latest};
+  \item set \code{PYTHONDONTWRITEBYTECODE}, \code{PYTHONUNBUFFERED},
+        \code{PIP\_NO\_CACHE\_DIR} and \code{PORT=8000};
+  \item copy \code{requirements.txt} and install the dependencies;
+  \item copy the application;
+  \item conditionally change ownership to the \code{commandia} user;
+  \item expose port 8000;
+  \item add a healthcheck that calls \code{http://127.0.0.1:8000/healthz};
+  \item run \code{uvicorn app:app --host 0.0.0.0 --port 8000}.
+\end{itemize}
+
+The documentation describes a \code{python:3.12-slim} base image, but the
+current Dockerfile builds from \code{ai-base-env:latest}. The current file also
+does not contain a \code{USER} directive; the ownership change alone does not
+switch the runtime user.
+
+\subsection{Compose Topology}
+
+\begin{lstlisting}[caption={docker-compose.yml}]
+services:
+  ai:
+    build: .
+    image: commandia:local
+    ports: ["8000:8000"]
+    env_file: .env
+    restart: unless-stopped
+  backend:
+    build: .
+    image: commandia:local
+    command: sh -c "uvicorn backend.main:app --host 0.0.0.0 --port 8001"
+    ports: ["8001:8001"]
+    env_file: .env
+    restart: unless-stopped
+\end{lstlisting}
+
+Both services use the same image. The AI service runs the current
+\code{app.py} on port 8000; the legacy backend runs \code{backend.main:app} on
+port 8001. They share the same \code{.env} file.
+
+\subsection{Runtime Network Paths}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item Meta calls the public HTTPS webhook of \code{app.py}.
+  \item \code{app.py} calls the Graph API to send replies.
+  \item \code{ai\_brain.py} calls the Gemini API.
+  \item \code{order\_store.py} calls the Supabase REST endpoint.
+  \item For local development without a public HTTPS endpoint, the backend
+        emulator posts directly to the local webhook, or a tunnel such as
+        ngrok is used.
+\end{itemize}
+
+\subsection{Secrets and Ignore Rules}
+
+\code{.dockerignore} excludes \code{.env} and \code{.env.*} except the template,
+the Git directory, Python caches, virtual environments, tests, development
+requirements, documentation, editor files and Docker files. \code{.gitignore}
+excludes \code{.env}, Python caches, pytest and mypy caches, virtual
+environments and egg metadata.
+
+The legacy \code{backend/main.py} contains a hard-coded fallback verify token,
+and \code{backend/force\_link.py} contains a hard-coded access token. These are
+security risks: the tokens must be rotated, removed from the source and loaded
+only from the environment.
+
+% =============================================================================
+\section{Branch-Specific Architecture}
+
+\subsection{\code{ai\_model\_part}}
+
+This branch is based on the AI tip \code{eaa6242} and contains the AI module,
+the FastAPI service, the offline tests and the Docker image. Its distinctive
+changes are database-facing:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item a rewritten \code{backend/schema.sql} aligned with the canonical order
+        contract: \code{order\_id} primary key, \code{wilaya},
+        \code{wilaya\_code}, \code{product\_details JSONB},
+        \code{order\_status} and the \code{ESCALATION} enum value;
+  \item \code{backend/test.sql}, a valid-insert and join demonstration;
+  \item \code{backend/test2.sql}, two expected-to-fail inserts for the phone
+        and wilaya constraints;
+  \item \code{tests/test\_schema\_contract.py}, the schema-to-writer contract
+        test.
+\end{itemize}
+
+Unlike \code{main}, this branch does not contain the legacy
+\code{backend/main.py}, the emulator, the Meta subscription helper, the
+Markdown prompt or the legacy backend requirements. It is therefore an AI and
+database-contract branch, not a deployment branch.
+
+The incomplete point is the missing \code{DERIVED\_COLUMNS} definition in
+\code{order\_store.py}, which makes the new contract test fail at collection
+time.
+
+\subsection{\code{initial-backend} and \code{feat/meta-webhook}}
+
+These two names point to commit \code{56fac82}. The architecture is the first
+backend milestone:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item root \code{main.py}: a minimal FastAPI application with only a root
+        route returning the service status and version;
+  \item \code{backend/schema.sql}: the initial PostgreSQL schema with the
+        legacy \code{orders.id}, \code{status} and \code{wilaya\_name}
+        columns, and the \code{ESCALATED} enum value;
+  \item \code{backend/test.sql} and \code{backend/test2.sql}: SQL smoke tests;
+  \item \code{backend/test\_db.py}: Supabase connectivity check;
+  \item \code{backend/prompt.md}: early system prompt;
+  \item \code{requirements.txt}: FastAPI, Uvicorn, Supabase and dotenv.
+\end{itemize}
+
+There is no AI module, no webhook handler and no persistence code at this
+stage.
+
+\subsection{\code{origin/feat/metaWebhook}}
+
+This remote branch advances the backend milestone with:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{backend/main.py}: a full webhook application with root,
+        health, webhook verification, webhook ingestion, \code{/chat},
+        Supabase client initialization, a mock order fallback and an inventory
+        check;
+  \item \code{backend/emulator.py}: a local Instagram DM payload generator;
+  \item \code{backend/force\_link.py}: Meta app subscription helper;
+  \item \code{backend/requirements.txt} and \code{backend/.gitignore}.
+\end{itemize}
+
+The webhook handler parses \code{payload["object"] == "instagram"}, iterates
+over \code{entry} and \code{messaging}, extracts the sender and text, calls the
+AI service, writes the order through \code{OrderStore}, and returns a success
+status. On AI failure it calls \code{create\_mock\_order}, which inserts a
+fixed test order and its item into Supabase. This branch does not verify the
+Meta signature and does not deduplicate messages.
+
+\subsection{\code{origin/main}}
+
+The remote main branch is the merged backend snapshot. It contains the schema,
+the webhook backend and the emulator inherited from
+\code{origin/feat/metaWebhook}, but it does not contain the AI module, the AI
+tests, the AI documentation or the Docker image. It is the point from which the
+local \code{main} later integrated the AI stream.
+
+\subsection{\code{main}}
+
+The local \code{main} branch is the convergence point:
+
+\begin{itemize}[leftmargin=1.2em]
+  \item the AI module from the AI stream;
+  \item the FastAPI service \code{app.py} with HMAC verification, deduplication
+        and background processing;
+  \item the Supabase REST writer;
+  \item the legacy backend application and the schema;
+  \item the offline test suite and the golden dataset;
+  \item the Dockerfile and the Compose topology;
+  \item the project documents.
+\end{itemize}
+
+The branch is functional as an AI service and as a demo backend, but the
+database writer and the SQL schema are not aligned, as described in
+Section 7.4.
+
+% =============================================================================
+\section{Architectural Decisions, Risks and Technical Debt}
+
+\subsection{Decisions}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \textbf{Prompt engineering rather than fine-tuning}: the PRD asks for
+        prompt engineering; the AI Brain uses a versioned system prompt and
+        structured output.
+  \item \textbf{Gemini rather than OpenAI or Anthropic}: the implementation
+        uses the \code{google-genai} SDK, while the PRD mentions OpenAI and
+        Anthropic. The documentation is older than the code.
+  \item \textbf{Supabase through REST rather than a database driver}: this
+        keeps the runtime dependency surface small and works from a container.
+  \item \textbf{In-memory conversation registry}: simple and sufficient for a
+        demo, but not durable and not horizontally scalable.
+  \item \textbf{Defensive extraction}: invalid individual fields are dropped
+        rather than rejecting the whole order.
+  \item \textbf{Deterministic language heuristics}: avoids an extra model call
+        and makes the mirror rule testable offline.
+  \item \textbf{Immediate webhook acknowledgement}: avoids Meta retries and
+        moves the slow AI and Graph API work to background tasks.
+\end{itemize}
+
+\subsection{Risks and Debt}
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item \textbf{Main-branch schema drift}. The writer sends
+        \code{order\_id}, \code{wilaya}, \code{product\_details} and
+        \code{order\_status}; the main schema expects \code{id},
+        \code{wilaya\_name} and \code{status} and has no
+        \code{product\_details}. A real insert would fail.
+  \item \textbf{Incomplete AI branch contract}. \code{ai\_model\_part} adds a
+        contract test that imports \code{DERIVED\_COLUMNS}, but the writer on
+        that branch does not define it.
+  \item \textbf{No durable conversation store}. The \code{AIService}
+        dictionary is lost on restart and is not shared between processes. A
+        Redis or Supabase-backed store is needed before horizontal scaling.
+  \item \textbf{Model state unreliability}. The prompt asks the model for
+        \code{conversation\_state}, but the model does not always return it
+        reliably. The code compensates with guardrails, monotonic transitions
+        and intent markers.
+  \item \textbf{Legacy webhook security}. \code{backend/main.py} does not
+        verify \code{X-Hub-Signature-256} and does not deduplicate messages.
+  \item \textbf{Secrets in source}. The legacy backend has a hard-coded
+        fallback verify token, and \code{backend/force\_link.py} has a
+        hard-coded access token. They must be rotated and removed.
+  \item \textbf{Mock order fallback}. On AI failure, the legacy backend inserts
+        a fixed test order. This is acceptable for a demo but would pollute
+        production data.
+  \item \textbf{Tracked bytecode}. \code{\_\_pycache\_\_/main.cpython-314.pyc}
+        is present in some branch trees and should be removed from tracking.
+  \item \textbf{No migrations and no CI}. The schema is a raw SQL file, and no
+        CI configuration was observed. Schema changes and tests are not
+        automatically enforced.
+  \item \textbf{PRD and implementation differ}. The PRD mentions 58 wilayas,
+        OpenAI or Anthropic, and a Next.js dashboard. The code uses 69
+        wilayas, Gemini and no dashboard yet.
+  \item \textbf{No merchant dashboard}. The Next.js dashboard is part of the
+        PRD and roadmap but is not present in the repository.
+  \item \textbf{Base image mismatch}. The documentation says
+        \code{python:3.12-slim}; the current Dockerfile uses
+        \code{ai-base-env:latest}, which must exist on the build host.
+\end{enumerate}
+
+\subsection{Recommended Consolidation Path}
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item Choose the canonical database contract and apply it to the schema and
+        to \code{order\_store.py} on all active branches.
+  \item Define \code{DERIVED\_COLUMNS} and finish the contract test on
+        \code{ai\_model\_part}; merge the corrected schema into \code{main}.
+  \item Add a persistent conversation store and make the service safe for
+        multiple workers.
+  \item Harden the legacy webhook or retire it in favor of \code{app.py}.
+  \item Remove the hard-coded tokens, rotate them and add secret scanning.
+  \item Add migrations, CI and a smoke test that runs against a disposable
+        Supabase/PostgreSQL instance.
+  \item Add the merchant dashboard or explicitly scope it out of the current
+        deliverable.
+\end{enumerate}
+
+% =============================================================================
+\section{Branch File Inventory}
+
+\subsection{Files Unique to \code{main} and the AI Stream}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{ai\_brain.py}, \code{ai\_service.py}, \code{schemas.py},
+        \code{system\_prompt.py}, \code{wilayas.py}, \code{config.py};
+  \item \code{app.py}, \code{order\_store.py};
+  \item \code{demo.py}, \code{test\_ai.py};
+  \item \code{tests/conftest.py}, \code{tests/golden\_dataset.json} and the
+        eight AI test modules;
+  \item \code{Dockerfile}, \code{docker-compose.yml}, \code{.dockerignore};
+  \item \code{.env.example}, \code{requirements.txt},
+        \code{requirements-dev.txt}, \code{pytest.ini};
+  \item \code{README\_AI.md}, \code{RESUME.md}, \code{prd.txt},
+        \code{roadmap.txt}.
+\end{itemize}
+
+\subsection{Files Unique to \code{ai\_model\_part}}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{tests/test\_schema\_contract.py};
+  \item \code{backend/test.sql};
+  \item \code{backend/test2.sql};
+  \item the canonical version of \code{backend/schema.sql}.
+\end{itemize}
+
+\subsection{Files Unique to the Backend Stream}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{initial-backend} and \code{feat/meta-webhook}: root
+        \code{main.py}, \code{backend/prompt.md},
+        \code{backend/requirements.txt}, \code{backend/test.sql},
+        \code{backend/test2.sql}, \code{backend/test\_db.py};
+  \item \code{origin/feat/metaWebhook}: \code{backend/main.py},
+        \code{backend/emulator.py}, \code{backend/force\_link.py},
+        \code{backend/.gitignore}, \code{backend/requirements.txt}.
+\end{itemize}
+
+\subsection{Files Present on All or Most Branches}
+
+\begin{itemize}[leftmargin=1.2em]
+  \item \code{.gitignore};
+  \item \code{backend/schema.sql} (with different versions);
+  \item \code{backend/test\_db.py} (with different versions);
+  \item \code{requirements.txt} (different roots or locations).
+\end{itemize}
+
+% =============================================================================
+\appendix
+
+\section{Useful Commands}
+
+\begin{lstlisting}[caption={Installation and offline tests}]
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pytest -q
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Run the service and the demo}]
+uvicorn app:app --port 8000
+python demo.py
+python test_ai.py
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Golden dataset on Windows PowerShell}]
+$env:COMMANDIA_GOLDEN="1"
+pytest tests/test_golden_dataset.py -q
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Docker}]
+docker build -t commandia .
+docker run --rm -p 8000:8000 --env-file .env commandia
+docker compose up --build
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Branch inspection}]
+git branch -a
+git log --oneline --graph --decorate --all
+git ls-tree -r --name-only main
+git diff --stat main ai_model_part
+git diff --stat main origin/feat/metaWebhook
+\end{lstlisting}
+
+\section{Overleaf Notes}
+
+\begin{enumerate}[leftmargin=1.2em]
+  \item Copy the content of this file into a new Overleaf project and name the
+        file \code{main.tex}.
+  \item Compile with pdfLaTeX. All packages used here are available in the
+        standard Overleaf distribution.
+  \item The document uses UTF-8 and standard fonts; no external images or
+        fonts are required.
+  \item The TikZ diagrams are self-contained. If a diagram must be removed,
+        delete the corresponding \code{figure} environment without affecting
+        the rest of the document.
+  \item The listings are intentionally ASCII-safe except for the code
+        fragments quoted from the repository.
+\end{enumerate}
+
+\section{Glossary}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+Term & Meaning \\
+\midrule
+AI Brain & The \code{AIBrain} engine that builds prompts, calls Gemini and
+  updates the conversation state. \\
+Sacred fields & The five fields required before an order can be confirmed:
+  name, phone, wilaya, delivery type and address. \\
+Wilaya & An Algerian administrative province. The implementation supports 69
+  codes. \\
+Darija & Algerian Arabic, written in Arabic script. \\
+Franco-Arabic & Algerian Darija written in Latin script with digits, for
+  example \code{3andkom} and \code{bchhal}. \\
+Mirror rule & The assistant replies in the language of the customer's first
+  message. \\
+Escalation & Human handoff state used when the bot cannot complete the order. \\
+PostgREST & The REST interface exposed by Supabase over PostgreSQL. \\
+COD & Cash on delivery, the dominant payment model for the target market. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\end{document}

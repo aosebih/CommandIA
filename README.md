@@ -68,6 +68,56 @@ py -3.10 -m uvicorn app:app --host 0.0.0.0 --port 8000
 
 FastAPI serves `frontend/dist` at http://localhost:8000, including client-side routes.
 
+## Fullstack hosting
+
+`main` is ready to deploy as one service. The Docker image builds the React app, installs the FastAPI dependencies, and serves both from a single origin.
+
+### Render
+
+The repository includes `render.yaml`:
+
+1. Push `main` to GitHub.
+2. In Render, choose **New > Blueprint** and select the repository.
+3. Fill the secret values requested for `GEMINI_API_KEY` and the optional Meta variables.
+4. Deploy.
+
+The blueprint uses `plan: starter` because it mounts a 1 GB persistent disk at `/data` for `state.json`. For a free demo deployment, remove the `disk` block and set `plan: free`; workspace data will reset on restarts.
+
+### Docker
+
+```powershell
+docker build -t commandia .
+docker run --rm -p 8000:8000 --env-file .env commandia
+```
+
+To persist workspace data in a named volume:
+
+```powershell
+docker run --rm -p 8000:8000 --env-file .env `
+  -e COMMANDIA_DATA_FILE=/data/state.json `
+  -v commandia-data:/data `
+  commandia
+```
+
+Open http://localhost:8000.
+
+### Native Python host
+
+Use `build.sh` as the build command and `Procfile` as the process definition. The host must provide Python 3.10 and Node.js 20 so the frontend can be built.
+
+### Production environment
+
+```env
+COMMANDIA_SESSION_SECRET=<long-random-value>
+COMMANDIA_COOKIE_SECURE=True
+COMMANDIA_COOKIE_SAMESITE=lax
+COMMANDIA_DATA_FILE=/data/state.json
+COMMANDIA_FRONTEND_DIST=frontend/dist
+GEMINI_API_KEY=<your-key>
+```
+
+Use one process or instance only: the JSON store is protected by an in-process lock, not a distributed lock. For multi-instance production, replace it with a database.
+
 ## Frontend hosting
 
 The frontend is in `frontend/` on `main` and is configured for static hosting.

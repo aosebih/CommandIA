@@ -2,7 +2,7 @@
 
 React + TypeScript + Vite dashboard and public site for CommandIA.
 
-This directory is also published as the root of the `frontend` Git branch for static hosting. On that branch, this file is the repository README.
+The fullstack repository uses a single `main` branch. Configure the hosting provider with this `frontend/` directory as the project root.
 
 ## Run locally
 
@@ -50,9 +50,9 @@ The build output is always `dist/`.
 ## Deploy to Vercel
 
 1. Import the repository.
-2. Select the `frontend` branch.
-3. Framework preset: **Vite**.
-4. Root directory: `./`.
+2. Select the `main` branch.
+3. Set **Root Directory** to `frontend`.
+4. Framework preset: **Vite**.
 5. Build command: `npm run build`.
 6. Output directory: `dist`.
 7. Environment variables:
@@ -62,20 +62,22 @@ The build output is always `dist/`.
 
 ## Deploy to Netlify
 
-1. Import the repository and select the `frontend` branch.
-2. Netlify reads `netlify.toml`; keep the base directory empty.
-3. Set the same environment variables as above.
-4. Deploy.
+1. Import the repository and select the `main` branch.
+2. Set **Base directory** to `frontend`.
+3. Netlify reads `frontend/netlify.toml`.
+4. Set the same environment variables as above.
+5. Deploy.
 
 ## Deploy to Cloudflare Pages
 
 1. Create a Pages project and connect the repository.
-2. Select the `frontend` branch.
-3. Framework preset: **Vite**.
-4. Build command: `npm run build`.
-5. Build output directory: `dist`.
-6. Set the same environment variables as above.
-7. Deploy.
+2. Select the `main` branch.
+3. Set **Root directory** to `frontend`.
+4. Framework preset: **Vite**.
+5. Build command: `npm run build`.
+6. Build output directory: `dist`.
+7. Set the same environment variables as above.
+8. Deploy.
 
 ## API deployment note
 

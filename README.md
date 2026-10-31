@@ -93,10 +93,21 @@ The `frontend` branch is ready for static hosting. The root `frontend/` director
 
 1. Import the repository and select the `frontend` branch.
 2. Base directory: leave empty.
-3. Build command: `npm run build`
-4. Publish directory: `dist`
-5. Set `VITE_USE_MOCK=false` and, when needed, `VITE_API_URL=https://your-backend.example.com`.
-6. Deploy.
+3. Netlify reads `netlify.toml`; build command is `npm run build` and publish directory is `dist`.
+4. Set `VITE_USE_MOCK=false` and, when needed, `VITE_API_URL=https://your-backend.example.com`.
+5. Deploy.
+
+### Cloudflare Pages
+
+1. Create a Pages project and connect the repository.
+2. Select the `frontend` branch.
+3. Framework preset: **Vite**.
+4. Build command: `npm run build`.
+5. Build output directory: `dist`.
+6. Set `VITE_USE_MOCK=false` and, when needed, `VITE_API_URL=https://your-backend.example.com`.
+7. Deploy.
+
+`public/_redirects` provides the SPA fallback for Netlify and Cloudflare Pages. `public/_headers` adds basic security and asset-cache headers.
 
 ### Backend configuration for a separately hosted frontend
 

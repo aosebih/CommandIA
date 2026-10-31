@@ -35,6 +35,18 @@ VITE_USE_MOCK=false
 
 When `VITE_API_URL` is used, the backend must allow the frontend origin through `COMMANDIA_CORS_ORIGINS` and use credentials-compatible cookie settings.
 
+## Hosting configuration
+
+| File | Purpose |
+| --- | --- |
+| `vercel.json` | SPA fallback for Vercel |
+| `netlify.toml` | Build settings and Node version for Netlify |
+| `public/_redirects` | SPA fallback for Netlify and Cloudflare Pages |
+| `public/_headers` | Security and asset caching headers |
+| `.nvmrc` | Node 20 for providers that read it |
+
+The build output is always `dist/`.
+
 ## Deploy to Vercel
 
 1. Import the repository.
@@ -48,15 +60,28 @@ When `VITE_API_URL` is used, the backend must allow the frontend origin through 
    - `VITE_API_URL=https://your-backend.example.com` if the API is on another origin
 8. Deploy.
 
-`vercel.json` provides the SPA fallback for client-side routes.
-
 ## Deploy to Netlify
 
 1. Import the repository and select the `frontend` branch.
-2. Build command: `npm run build`.
-3. Publish directory: `dist`.
-4. Set the same environment variables as above.
-5. Deploy.
+2. Netlify reads `netlify.toml`; keep the base directory empty.
+3. Set the same environment variables as above.
+4. Deploy.
+
+## Deploy to Cloudflare Pages
+
+1. Create a Pages project and connect the repository.
+2. Select the `frontend` branch.
+3. Framework preset: **Vite**.
+4. Build command: `npm run build`.
+5. Build output directory: `dist`.
+6. Set the same environment variables as above.
+7. Deploy.
+
+## API deployment note
+
+If the backend is on another domain, set `VITE_API_URL` before building. Configure the backend with `COMMANDIA_CORS_ORIGINS` and use `COMMANDIA_COOKIE_SAMESITE=none` with `COMMANDIA_COOKIE_SECURE=True` for cross-site cookies.
+
+For the most reliable authentication, host frontend and backend on the same site, for example `app.example.com` and `api.example.com`, or serve `frontend/dist` directly from FastAPI.
 
 ## Routes
 

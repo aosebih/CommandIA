@@ -2,14 +2,11 @@
 
 CommandIA is a conversational commerce workspace for Algerian e-commerce shops. It combines a FastAPI backend, a Gemini-powered order assistant, and a React dashboard.
 
-## Repository branches
+## Repository layout
 
-| Branch | Contents | Use |
-| --- | --- | --- |
-| `main` | Fullstack project: FastAPI backend + React app in `frontend/` | Local development and fullstack deployment |
-| `frontend` | Frontend only, at the repository root | Static hosting on Vercel, Netlify, Cloudflare Pages or similar |
+The repository uses a single `main` branch. The FastAPI backend is at the repository root and the React app is in `frontend/`.
 
-`main` is the source of truth. The `frontend` branch is generated from `frontend/` so hosting providers can build it without the Python backend.
+When hosting only the frontend, configure the hosting provider with `frontend` as the project root directory.
 
 ## Features
 
@@ -73,14 +70,14 @@ FastAPI serves `frontend/dist` at http://localhost:8000, including client-side r
 
 ## Frontend hosting
 
-The `frontend` branch is ready for static hosting. The root `frontend/` directory is also configured for providers that build from a subdirectory.
+The frontend is in `frontend/` on `main` and is configured for static hosting.
 
 ### Vercel
 
 1. Push the repository to GitHub, GitLab or Bitbucket.
 2. In Vercel, choose **Add New > Project** and import the repository.
-3. Select the `frontend` branch.
-4. Keep the root directory as `./`.
+3. Select the `main` branch.
+4. Set **Root Directory** to `frontend`.
 5. Use framework preset **Vite**, build command `npm run build`, output directory `dist`.
 6. Add environment variables:
    - `VITE_USE_MOCK=false`
@@ -91,23 +88,24 @@ The `frontend` branch is ready for static hosting. The root `frontend/` director
 
 ### Netlify
 
-1. Import the repository and select the `frontend` branch.
-2. Base directory: leave empty.
-3. Netlify reads `netlify.toml`; build command is `npm run build` and publish directory is `dist`.
+1. Import the repository and select the `main` branch.
+2. Set **Base directory** to `frontend`.
+3. Netlify reads `frontend/netlify.toml`; build command is `npm run build` and publish directory is `dist`.
 4. Set `VITE_USE_MOCK=false` and, when needed, `VITE_API_URL=https://your-backend.example.com`.
 5. Deploy.
 
 ### Cloudflare Pages
 
 1. Create a Pages project and connect the repository.
-2. Select the `frontend` branch.
-3. Framework preset: **Vite**.
-4. Build command: `npm run build`.
-5. Build output directory: `dist`.
-6. Set `VITE_USE_MOCK=false` and, when needed, `VITE_API_URL=https://your-backend.example.com`.
-7. Deploy.
+2. Select the `main` branch.
+3. Set **Root directory** to `frontend`.
+4. Framework preset: **Vite**.
+5. Build command: `npm run build`.
+6. Build output directory: `dist`.
+7. Set `VITE_USE_MOCK=false` and, when needed, `VITE_API_URL=https://your-backend.example.com`.
+8. Deploy.
 
-`public/_redirects` provides the SPA fallback for Netlify and Cloudflare Pages. `public/_headers` adds basic security and asset-cache headers.
+`frontend/public/_redirects` provides the SPA fallback for Netlify and Cloudflare Pages. `frontend/public/_headers` adds basic security and asset-cache headers.
 
 ### Backend configuration for a separately hosted frontend
 

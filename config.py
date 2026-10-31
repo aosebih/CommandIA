@@ -1,0 +1,92 @@
+"""
+Configuration for CommandIA AI module.
+Loads Gemini API key and model settings.
+"""
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
+
+
+def is_configured(value: str | None) -> bool:
+    """
+    Return True when an environment value is a real credential.
+
+    The shipped .env template keeps placeholder values such as
+    "your_supabase_url_here". Treating those as configured would make the
+    webhook and the Supabase writer fail against fake endpoints, so any
+    service relying on a credential must check it first.
+    """
+    if not value:
+        return False
+    stripped = value.strip().strip("'\"").lower()
+    if not stripped:
+        return False
+    return not (stripped.startswith("your_") and stripped.endswith("_here"))
+
+# Gemini API configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Primary model. gemini-2.5-flash returns 404 for new API keys
+# ("no longer available to new users"), so the default is a 3.x model.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+
+# Tried in order when the primary model fails with a transient error.
+GEMINI_MODEL_FALLBACKS = [
+    model.strip()
+    for model in os.getenv("GEMINI_MODEL_FALLBACKS", "gemini-3.5-flash").split(",")
+    if model.strip()
+]
+
+# Conversation settings
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
+RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "2.0"))
+# Upper bound for a single wait. The Gemini free tier answers 429 with the
+# delay it expects ("Please retry in 15.5s"), and that delay is used when it
+# is longer than the exponential backoff.
+RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60"))
+CONFIRMATION_THRESHOLD = 5  # 5 sacred fields
+
+# Allowed languages/dialects as per PRD
+SUPPORTED_LANGUAGES = ["darija", "franco_arabic", "french", "english"]
+
+# Meta Graph API (Instagram / Facebook DMs)
+META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN")
+META_APP_SECRET = os.getenv("META_APP_SECRET")
+META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
+META_PAGE_ID = os.getenv("META_PAGE_ID")
+META_GRAPH_API_VERSION = os.getenv("META_GRAPH_API_VERSION", "v26.0")
+
+META_ENABLED = is_configured(META_ACCESS_TOKEN)
+
+# Service configuration
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+COMMANDIA_API_KEY = os.getenv("COMMANDIA_API_KEY")
+
+# Browser origins allowed to call the API with credentials. Add the hosted
+# frontend origin when it runs on a different domain, for example
+# https://app.example.com.
+CORS_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "COMMANDIA_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173",
+    ).split(",")
+    if origin.strip()
+]
+
+# Session cookie flags. Cross-site frontend/backend deployments need
+# SameSite=None together with Secure=True.
+COOKIE_SECURE = os.getenv("COMMANDIA_COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("COMMANDIA_COOKIE_SAMESITE", "lax").lower()
+
+# Supabase persistence (optional: disabled when credentials are absent)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_ORDERS_TABLE = os.getenv("SUPABASE_ORDERS_TABLE", "orders")
+
+SUPABASE_ENABLED = is_configured(SUPABASE_URL) and is_configured(SUPABASE_KEY)

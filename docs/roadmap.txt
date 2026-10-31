@@ -1,0 +1,185 @@
+CommandIA — Final Task Division & 4-Week Execution Roadmap
+Page 1
+CommandIA
+Final Task Division & 4-Week Execution Roadmap
+Project Name
+CommandIA
+Project Scope
+Conversational AI Order Automation for Algerian E-Commerce
+Target Deliverable
+Working AI System (Instagram DM → Webhook → Supabase) +
+Clickable Figma Merchant Dashboard + Final Demo Video Pitch
+Sprint Duration
+4 Weeks (~7–10 hrs/week per role)
+Team Role Overview
+Role 1
+Project Lead & Backend
+Infrastructure Engineer
+Primary Focus: Project coordination, Meta API integration,
+FastAPI webhooks, Supabase database management, system
+integration, pitch narration.
+Role 2
+AI / NLP & Data
+Engineering Specialist
+Primary Focus: Social media data scraping/curation, "Golden
+Dataset" development, prompt engineering for Algerian
+Darija/Franco-Arabic, Pydantic JSON schema enforcement,
+technical demo recording.
+Role 3
+UI/UX & Media Design
+Specialist
+Primary Focus: Competitor benchmark research,
+low/high-fidelity Figma wireframes, interactive dashboard
+prototyping, pitch deck slides, video editing and final assembly.
+4-Week Execution Plan
+Week 1: Infrastructure, Data Curation & Wireframing
+Role 1 (Project Lead & Backend Infrastructure Engineer)
+•
+Create and verify the Meta Developer Account and App container (CommandIA-Test).
+•
+Set up a test Facebook Business Page and linked Instagram Professional Account.
+•
+Initialize the backend project repository using Python (FastAPI).
+•
+Design and deploy the Supabase PostgreSQL database schema (Merchants, Products, Orders).
+Role 2 (AI / NLP & Data Engineering Specialist)
+•
+Execute comment/DM scraping scripts across public Algerian e-commerce social posts using
+instaloader or web scraping tools.
+•
+Curate a 50-entry "Golden Dataset" in Google Sheets mapping raw customer inputs (in Darija,
+Franco-Arabic, French, and English) to expected JSON outputs.
+•
+Draft the V1 System Prompt for the LLM engine defining dialect rules and commercial
+guardrails (e.g., no unauthorized discounts).
+CommandIA — Final Task Division & 4-Week Execution Roadmap
+Page 2
+Role 3 (UI/UX & Media Design Specialist)
+•
+Conduct benchmark UX research on local and international merchant portals.
+•
+Design low-fidelity wireframes in Figma for the core dashboard views:
+–
+Incoming Orders Table (Filtering by status, Wilaya, and delivery type).
+–
+Product Catalog Manager (Adding items, pricing, inventory).
+–
+Bot Settings (Toggling AI ON/OFF, setting delivery fees).
+Week 2: Pipeline Development & High-Fidelity Design
+Role 1 (Project Lead & Backend Infrastructure Engineer)
+•
+Build the FastAPI webhook endpoint to verify and receive live Meta Graph API webhook
+payloads (GET/POST).
+•
+Implement local tunneling (ngrok) to test live incoming DMs from Instagram.
+•
+Build the Supabase database connector to write structured JSON order payloads directly to the
+Orders table.
+Role 2 (AI / NLP & Data Engineering Specialist)
+•
+Implement the LLM engine integration using Python (OpenAI or Anthropic APIs).
+•
+Enforce strict JSON output parsing using Pydantic or Instructor for the 5 Sacred Fields:
+–
+customer_name
+–
+phone_number (Validated 10-digit Algerian format)
+–
+wilaya (Official 58 Wilayas)
+–
+delivery_type (HOME vs. DESK)
+–
+address (Commune / Street / Bureau details)
+•
+Test prompt iterations against the "Golden Dataset" to refine handling of haggling and missing
+fields.
+Role 3 (UI/UX & Media Design Specialist)
+•
+Convert low-fidelity wireframes into high-fidelity Figma visual designs.
+•
+Integrate custom branding, Algerian localizations (Wilaya/Commune selectors, delivery type
+badges), and dark/light UI components.
+•
+Design visual components for the 5 Sacred Fields display within the orders management view.
+Week 3: End-to-End System Integration & Pitch Preparation
+Role 1 (Project Lead & Backend Infrastructure Engineer)
+•
+Connect the FastAPI Webhook pipeline directly to the AI Engine and Supabase database.
+•
+Conduct end-to-end integration testing: send live DMs from test Instagram accounts and
+confirm automated DB records.
+•
+Implement exception handling for edge cases (unsupported formats, API drop-outs, incomplete
+data).
+Role 2 (AI / NLP & Data Engineering Specialist)
+•
+Fine-tune the conversational state machine logic (State 0: Inquiry → State 1: Intent → State 2:
+Data Collection → State 3: Final Confirmation).
+•
+Implement human handoff triggers (flagging chats requiring manual intervention in the
+database).
+•
+Prepare the technical demonstration environment for video capture.
+CommandIA — Final Task Division & 4-Week Execution Roadmap
+Page 3
+Role 3 (UI/UX & Media Design Specialist)
+•
+Connect high-fidelity Figma screens into an interactive, clickable prototype simulating a live
+merchant session.
+•
+Design 3–4 presentation slides for the pitch video (Problem, Solution, Architecture, Market
+Opportunity).
+•
+Draft the video storyboard and visual script in coordination with the team.
+Week 4: Final Demo Production & Project Submission
+Role 1 (Project Lead & Backend Infrastructure Engineer)
+•
+Coordinate team final deliverables and submission compliance.
+•
+Record the project overview, problem statement, and business value voiceover audio track.
+•
+Perform final code review and push backend repository documentation to GitHub.
+Role 2 (AI / NLP & Data Engineering Specialist)
+•
+Record the split-screen technical demonstration:
+–
+Left Screen: Live Instagram chat interaction in Darija/Franco-Arabic on mobile.
+–
+Right Screen: Real-time JSON data extraction and automated row creation in Supabase.
+Role 3 (UI/UX & Media Design Specialist)
+•
+Record screen walkthroughs of the clickable Figma prototype.
+•
+Edit the final submission video (combining voiceover narration, technical split-screen demo,
+dashboard walkthrough, and pitch slides).
+•
+Add captions, audio levelling, and export the final high-definition demo video file.
+System Interface & Data Contract
+To ensure independent development between Backend, AI, and Design, all components must align
+on this exact JSON schema:
+{
+  "order_id": "uuid-v4",
+  "customer_name": "String",
+  "phone_number": "String (10 Digits: 05/06/07...)",
+  "wilaya": "String (1-58)",
+  "delivery_type": "Enum ('HOME', 'DESK')",
+  "address": "String (Commune / Location Details)",
+  "product_details": {
+    "item_id": "String",
+    "quantity": "Integer",
+    "size_color": "String"
+  },
+  "total_price_da": "Float",
+  "order_status": "Enum ('PENDING_CONFIRMATION', 'CONFIRMED', 'REQUIRES_HUMAN')"
+}
+CommandIA — Final Task Division & 4-Week Execution Roadmap
+Page 4
+Daily Operational Protocol
+Daily Asynchronous Standup: Every team member posts three brief updates in the central
+project chat at the end of the day:
+•
+Progress: What was completed today.
+•
+Next Steps: What will be worked on tomorrow.
+•
+Blockers: Any technical issues or dependencies needing team support.

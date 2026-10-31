@@ -1,0 +1,26 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local workspace state (tracked seed lives in data/seed.json)
+data/state.json
+data/*.tmp
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+# Hosting
+.vercel/
+.netlify/
+frontend/.vercel/
+frontend/.netlify/

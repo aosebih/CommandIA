@@ -1,0 +1,213 @@
+{
+ "convs": [
+  {
+   "id": 1,
+   "n": "Amina Benali",
+   "h": "@amina.b",
+   "m": "attn",
+   "un": 1,
+   "ts": "10:42",
+   "oid": 1042,
+   "intent": "Refund / exception request",
+   "why": "Customer asks for a refund outside the 7-day policy. The AI cannot approve exceptions.",
+   "msgs": [
+    {
+     "w": "c",
+     "t": "Hello, I received my order 10 days ago and the zip is broken. Can I get a refund?",
+     "time": "10:38"
+    },
+    {
+     "w": "a",
+     "t": "Hello Amina! Sorry about the zip. Our refund window is 7 days, but I can offer an exchange. Would you like that?",
+     "time": "10:38"
+    },
+    {
+     "w": "c",
+     "t": "No, I want my money back. It is your fault, the product was defective!",
+     "time": "10:41"
+    },
+    {
+     "w": "a",
+     "t": "I understand your frustration. I am flagging this for a team member who can review your case.",
+     "time": "10:42"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "n": "Yacine Meziane",
+   "h": "@yacine_m",
+   "m": "ai",
+   "un": 1,
+   "ts": "10:31",
+   "oid": 1041,
+   "intent": "Ready to order",
+   "msgs": [
+    {
+     "w": "c",
+     "t": "Salam, do you have the black sneakers in size 42?",
+     "time": "10:27"
+    },
+    {
+     "w": "a",
+     "t": "Salam Yacine! Yes, black sneakers size 42 are in stock: 6 800 DA. Want to order?",
+     "time": "10:27"
+    },
+    {
+     "w": "c",
+     "t": "Yes. Delivery to Oran please",
+     "time": "10:29"
+    },
+    {
+     "w": "a",
+     "t": "Great. Delivery to Oran is 700 DA (2–3 days). Please confirm your full name, phone and address.",
+     "time": "10:31"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "n": "Sara Khelifi",
+   "h": "@sara.k",
+   "m": "manual",
+   "un": 0,
+   "ts": "09:55",
+   "oid": 1040,
+   "intent": "Complaint (resolving)",
+   "msgs": [
+    {
+     "w": "c",
+     "t": "My parcel is late. Where is it?",
+     "time": "09:41"
+    },
+    {
+     "w": "a",
+     "t": "I will check this for you. One moment.",
+     "time": "09:41"
+    },
+    {
+     "w": "h",
+     "t": "Hi Sara, this is Naila from the shop. Your parcel left Algiers this morning and arrives tomorrow. Sorry for the delay!",
+     "time": "09:55"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "n": "Lilia Hamdi",
+   "h": "@lilia_shop",
+   "m": "attn",
+   "un": 1,
+   "ts": "09:12",
+   "oid": null,
+   "intent": "Wants a human",
+   "why": "Customer explicitly asked to speak with a person.",
+   "msgs": [
+    {
+     "w": "c",
+     "t": "Can I talk to a real person please? I need a custom order for a wedding.",
+     "time": "09:11"
+    },
+    {
+     "w": "a",
+     "t": "Of course. I am notifying the shop owner right away.",
+     "time": "09:12"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "n": "Karim Djaballah",
+   "h": "@karim.d",
+   "m": "ai",
+   "un": 0,
+   "ts": "Yesterday",
+   "oid": 1039,
+   "intent": "Order confirmed",
+   "msgs": [
+    {
+     "w": "c",
+     "t": "Thanks, I got the confirmation!",
+     "time": "18:20"
+    },
+    {
+     "w": "a",
+     "t": "You are welcome Karim! Your order will ship tomorrow.",
+     "time": "18:20"
+    }
+   ]
+  }
+ ],
+ "orders": [
+  {
+   "id": 1042,
+   "name": "Amina Benali",
+   "ph": "0550 12 34 56",
+   "wil": "Alger",
+   "del": "Home delivery",
+   "addr": "12 Rue Didouche Mourad, Alger-Centre",
+   "tot": 5400,
+   "st": "delivered",
+   "d": "15 Oct 2026"
+  },
+  {
+   "id": 1041,
+   "name": "Yacine Meziane",
+   "ph": "0661 98 76 54",
+   "wil": "Oran",
+   "del": "Stop-desk",
+   "addr": "Yalidine desk, Es Senia",
+   "tot": 7500,
+   "st": "await",
+   "d": "Today"
+  },
+  {
+   "id": 1040,
+   "name": "Sara Khelifi",
+   "ph": "0770 45 67 89",
+   "wil": "Constantine",
+   "del": "Home delivery",
+   "addr": "Cité 5 Juillet, Bloc C, Constantine",
+   "tot": 4200,
+   "st": "shipped",
+   "d": "23 Oct 2026"
+  },
+  {
+   "id": 1039,
+   "name": "Karim Djaballah",
+   "ph": "0555 22 11 00",
+   "wil": "Blida",
+   "del": "Home delivery",
+   "addr": "Rue des Orangers, Blida",
+   "tot": 9800,
+   "st": "confirmed",
+   "d": "24 Oct 2026"
+  }
+ ],
+ "products": [
+  {
+   "id": 1,
+   "n": "Black sneakers",
+   "p": 6800,
+   "s": 6
+  },
+  {
+   "id": 2,
+   "n": "Linen dress",
+   "p": 4200,
+   "s": 14
+  },
+  {
+   "id": 3,
+   "n": "Leather watch",
+   "p": 9800,
+   "s": 0
+  },
+  {
+   "id": 4,
+   "n": "Canvas tote bag",
+   "p": 2400,
+   "s": 31
+  }
+ ]
+}
